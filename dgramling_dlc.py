@@ -351,7 +351,7 @@ class DLCModelTrainingSelection(dj.Manual):
     model_prefix='' : varchar(32)
     project_path='' : varchar(255) # DLC's project_path in config relative to root
     """
-
+    # What is the purpose of the training_id?
 
 @schema
 class DLCModelTraining(dj.Computed):
@@ -380,6 +380,7 @@ class DLCModelTraining(dj.Computed):
                 GetModelFolder as get_model_folder,
             )
         project_path = 
+        # TODO: find replacement func for get_dlc_root_data_dir 
         project_path = find_full_path(get_dlc_root_data_dir(), project_path)
 
         # ---- Build and save DLC configuration (yaml) file ----
