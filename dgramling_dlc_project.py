@@ -216,43 +216,78 @@ def convert_mp4(filename: str, video_path: str, dest_path: str,
         return dest_filename
 
 @schema
-class VideoSet(dj.Manual):
+class TrainingSet(dj.Computed):
     definition = """
-    # Table to hold videos used to train DeepLabCut Models
-    # Theoretically allows for adding of new materials for training...
-    video_name: varchar(40)  # Concise description of video
-    ---
-    file_path: varchar(255)  # Path to the video file
-    environment: varchar(40) # Environment where video was recorded..should pull from some table
+    -> DLCProject
+    training_set_name: varchar(40) # Concise name for training materials
     """
+
+    class File(dj.Part):
+        definition = """
+        # Paths of training files (e.g., labeled pngs, CSV or video)
+        -> TrainingSet
+        file_name: varchar(40) # Concise name to describe file
+        ---
+        file_path: varchar(255)
+        """
+    def make(self, key):
+        self.insert1(key)
+        config_path = (DLCProject() & key).fetch1('config_path')
+        from deeplabcut.utils.auxiliaryfunctions import read_config
+        cfg = read_config(config_path)
+        video_names = list(cfg['video_sets'].keys())
+        training_files = []
+        for video in video_names:
+            video_name = os.path.splitext(video.split(os.path.dirname(video) + '/')[-1])[0]
+            training_files.append(glob.glob(f"{cfg['project_path']}/labeled-data/{video_name}/*Collected*"))
+        for ind, video in enumerate(video_names):
+            key['file_name'] = f'video{ind+1}'
+            key['file_path'] = video
+            self.File.insert1(key)
+        for file in training_files:
+            file_type = os.path.splitext(file.split(os.path.dirname(file) + '/')[-1])[-1]
+            key['file_name'] = f'labeled_data_{file_type}'
+            key['file_path'] = file
+            self.File.insert1(key)
+
+# @schema
+# class VideoSet(dj.Manual):
+#     definition = """
+#     # Table to hold videos used to train DeepLabCut Models
+#     # Theoretically allows for adding of new materials for training...
+#     video_name: varchar(40)  # Concise description of video
+#     ---
+#     file_path: varchar(255)  # Path to the video file
+#     environment: varchar(40) # Environment where video was recorded..should pull from some table
+#     """
     
-    #TODO: maybe add seconday key that is path to extracted frames
-    @classmethod
-    def add_videos(cls, video_names: List, filenames: List, path: str, environment: str):
-        ''' Enforce .MP4 requirement for all videos
-        This is broken until I can map video_names to filenames
-        '''
-        added_files = []
-        all_files = glob.glob(path + '*')
-        video_files = [file for file in all_files if any(map(file.__contains__, filenames))]
-        if len(video_files) < 1:
-            raise Exception('No video file found')
-        if len(video_files) > 1:
-            assert len(video_names) == len(video_files), 'need to provide a video name for each file'
-            print(f'found {len(video_files)} matching files to add')
-            # TODO figure out how to map video_names to video_files
-            for file in video_files:
-                base_filename, file_ext = os.path.splitext(file)
-                if file_ext.lower() != '.mp4':
-                    filename = convert_mp4(file, path, path, 'mp4')
-                else:
-                    filename = base_filename
-                # Check that path is valid
-                if os.path.exists(Path(path + filename)):
-                    cls.insert1({'video_name' : video_name, 'file_path': Path(path + filename),
-                                 'environment': environment})
-                    added_files.append(path + filename)
-                else:
-                    # TODO: move this to a more appropriate location within the function
-                    raise Warning(f'Tried to insert {filename}, but the path was not valid')
-        return added_files
+#     #TODO: maybe add seconday key that is path to extracted frames
+#     @classmethod
+#     def add_videos(cls, video_names: List, filenames: List, path: str, environment: str):
+#         ''' Enforce .MP4 requirement for all videos
+#         This is broken until I can map video_names to filenames
+#         '''
+#         added_files = []
+#         all_files = glob.glob(path + '*')
+#         video_files = [file for file in all_files if any(map(file.__contains__, filenames))]
+#         if len(video_files) < 1:
+#             raise Exception('No video file found')
+#         if len(video_files) > 1:
+#             assert len(video_names) == len(video_files), 'need to provide a video name for each file'
+#             print(f'found {len(video_files)} matching files to add')
+#             # TODO figure out how to map video_names to video_files
+#             for file in video_files:
+#                 base_filename, file_ext = os.path.splitext(file)
+#                 if file_ext.lower() != '.mp4':
+#                     filename = convert_mp4(file, path, path, 'mp4')
+#                 else:
+#                     filename = base_filename
+#                 # Check that path is valid
+#                 if os.path.exists(Path(path + filename)):
+#                     cls.insert1({'video_name' : video_name, 'file_path': Path(path + filename),
+#                                  'environment': environment})
+#                     added_files.append(path + filename)
+#                 else:
+#                     # TODO: move this to a more appropriate location within the function
+#                     raise Warning(f'Tried to insert {filename}, but the path was not valid')
+#         return added_files
