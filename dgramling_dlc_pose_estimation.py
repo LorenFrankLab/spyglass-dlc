@@ -13,13 +13,12 @@ import glob
 import ruamel.yaml as yaml
 from typing import List, Dict, OrderedDict
 from pathlib import Path
-from spyglass.common.common_lab import LabTeam
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_behav import VideoFile
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from dgramling_dlc_project import BodyPart
 from dgramling_dlc_model import DLCModel
-from dlc_utils import find_full_path, find_root_directory
+from dlc_utils import find_full_path
 
 schema = dj.schema('dgramling_dlc_pose_estimation')
 
