@@ -27,7 +27,6 @@ class DLCPoseEstimationSelection(dj.Manual):
     definition = """
     -> VideoFile                           # Session -> Recording + File part table
     -> DLCModel                                    # Must specify a DLC project_path
-
     ---
     task_mode='load' : enum('load', 'trigger')  # load results or trigger computation
     video_path : varchar(120)                   # path to video file
