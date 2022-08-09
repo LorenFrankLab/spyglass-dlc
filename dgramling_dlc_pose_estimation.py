@@ -161,7 +161,7 @@ class DLCPoseEstimation(dj.Computed):
     -> DLCPoseEstimationSelection
     ---
     -> AnalysisNwbfile
-    dlc_pose_estimation_object_id
+    dlc_pose_estimation_object_id : varchar(40)
     pose_estimation_time: datetime  # time of generation of this set of DLC results
     """
 
@@ -222,20 +222,17 @@ class DLCPoseEstimation(dj.Computed):
         #     for k, v in dlc_result.data.items()
         # ]
         # TODO: determine where to add timestamps to the dataframe. 
+        
+        # Insert dlc pose estimation into analysis NWB file.
         nwb_analysis_file = AnalysisNwbfile()
         key['dlc_pose_estimation_object_id'] = nwb_analysis_file.add_nwb_object(
             analysis_file_name=key['analysis_file_name'],
             nwb_object=dlc_result.df,
         )
-
         nwb_analysis_file.add(
             nwb_file_name=key['nwb_file_name'],
             analysis_file_name=key['analysis_file_name'])
-
-        #  Do I need this
-        # AnalysisNwbfile().add(
-        #     key['nwb_file_name'], key['analysis_file_name'])
-
+        # Insert entry into DLCPoseEstimation
         self.insert1(key)
         self.insert1({**key, "pose_estimation_time": creation_time})
         # self.BodyPartPosition.insert(body_parts)
@@ -245,7 +242,7 @@ class DLCPoseEstimation(dj.Computed):
                          *attrs, **kwargs)
 
     def fetch1_dataframe(self):
-        return self.fetch_nwb()[0]['linearized_position'].set_index('time')
+        return self.fetch_nwb()[0]['dlc_pose_estimation'].set_index('time')
 
     @classmethod
     def get_trajectory(cls, key, body_parts="all"):

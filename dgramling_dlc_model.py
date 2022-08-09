@@ -19,6 +19,7 @@ from dgramling_dlc_training import DLCModelTraining
 
 schema = dj.schema('dgramling_dlc_model')
 
+#TODO: figure out why config needs to be overwritten
 @schema
 class DLCModel(dj.Manual):
     definition = """
@@ -135,6 +136,7 @@ class DLCModel(dj.Manual):
             "snapshotindex": dlc_config["snapshotindex"],
             "shuffle": shuffle,
             "trainingsetindex": int(trainingsetindex),
+            # TODO: replace project_path
             "project_path": project_path.relative_to(root_dir).as_posix(),
             "paramset_idx": paramset_idx,
             "config_template": dlc_config,
