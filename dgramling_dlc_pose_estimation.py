@@ -36,48 +36,32 @@ class DLCPoseEstimationSelection(dj.Manual):
 
     # I think it makes more sense to just use a set output directory of 'cumulus/deeplabcut/pose_estimation/'
     # or a directory like that... or maybe on stelmo? depends on what Loren/Eric think 
-    # @classmethod
-    # def infer_output_dir(cls, key, relative=False, mkdir=False):
-    #     """Return the expected pose_estimation_output_dir.
+    @classmethod
+    def infer_output_dir(cls, key, video_filename: str):
+        """Return the expected pose_estimation_output_dir.
 
-    #     With spaces in model name are replaced with hyphens.
-    #     Based on convention: / video_dir / Device_{}_Recording_{}_Model_{}
+        With spaces in model name are replaced with hyphens.
+        Based on convention: / video_dir / Device_{}_Recording_{}_Model_{}
 
-    #     Parameters
-    #     ----------
-    #     key: DataJoint key specifying a pairing of VideoRecording and Model.
-    #     relative (bool): Report directory relative to get_dlc_processed_data_dir().
-    #     mkdir (bool): Default False. Make directory if it doesn't exist.
-    #     """
-    #     # TODO: add check to make sure interval_list_name refers to a single epoch
-    #     # Or make key include epoch in and of itself instead of interval_list_name
-    #     epoch = int(key['interval_list_name']
-    #                 .replace('pos ', '')
-    #                 .replace(' valid times', '')
-    #                 ) + 1
-    #     # Get video_filepath
-    #     video_info = (VideoFile() &
-    #                   {'nwb_file_name': key['nwb_file_name'],
-    #                    'epoch': epoch}).fetch1()
-    #     io = pynwb.NWBHDF5IO('/stelmo/nwb/raw/' +
-    #                          video_info['nwb_file_name'], 'r')
-    #     nwb_file = io.read()
-    #     nwb_video = nwb_file.objects[video_info['video_file_object_id']]
-    #     video_filepath = nwb_video.external_file[0]
-    #     video_dir = os.path.dirname(video_filepath) + '/'
-    #     video_filename = video_filepath.split(video_dir)[-1]
-    #     recording_key = VideoFile & key
-    #     # output to cumulus/deeplabcut/videos?
-    #     output_dir = (
-    #         '/cumulus/deeplabcut/videos'
-    #         / (
-    #             f'{video_filename}_model_'
-    #             + key["model_name"].replace(" ", "-")
-    #         )
-    #     )
-    #     if mkdir:
-    #         output_dir.mkdir(parents=True, exist_ok=True)
-    #     return output_dir.relative_to(processed_dir) if relative else output_dir
+        Parameters
+        ----------
+        key: DataJoint key specifying a pairing of VideoRecording and Model.
+        relative (bool): Report directory relative to get_dlc_processed_data_dir().
+        mkdir (bool): Default False. Make directory if it doesn't exist.
+        """
+        # TODO: add check to make sure interval_list_name refers to a single epoch
+        # Or make key include epoch in and of itself instead of interval_list_name
+        if '.h264' in video_filename:
+            video_filename = video_filename.split('.')[0]
+        output_dir = (
+            Path('/stelmo/nwb/pose_estimation')
+            / Path(
+                f'{video_filename}_model_'
+                + key["model_name"].replace(" ", "-")
+            )
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir
     
     @classmethod
     def get_video_path(cls, key):
@@ -113,6 +97,16 @@ class DLCPoseEstimationSelection(dj.Manual):
         video_dir = os.path.dirname(video_filepath) + '/'
         video_filename = video_filepath.split(video_dir)[-1]
         return video_filepath, video_filename
+    
+    #TODO: this shouldn't be a classmethod...
+    @classmethod
+    def check_videofile(cls, video_path, video_filename, output_path: bool=None):
+        if 'mp4' in video_filename:
+            return video_path
+        from dlc_utils import _convert_mp4
+        output_filename = _convert_mp4(video_filename, video_path,
+                            output_path, videotype='mp4')
+        return output_filename
 
     @classmethod
     def insert_estimation_task(
@@ -138,11 +132,10 @@ class DLCPoseEstimationSelection(dj.Manual):
         relative (bool): Report directory relative to get_dlc_processed_data_dir().
         mkdir (bool): Default False. Make directory if it doesn't exist.
         """
-        # Is output_dir even required if saving to set directory? Should there be a separate folder for each 
-        # analyzed video?
-        output_dir = cls.infer_output_dir(key, relative=relative, mkdir=mkdir)
         # TODO: figure out if a separate video_key is needed without portions of key that refer to model
-        video_path, _ = cls.get_video_path(key)
+        video_path, video_filename = cls.get_video_path(key)
+        output_dir = cls.infer_output_dir(key, video_filename=video_filename)
+        video_path = cls.check_videofile(video_path, video_filename, output_dir)
         cls.insert1(
             {
                 **key,
@@ -160,22 +153,16 @@ class DLCPoseEstimation(dj.Computed):
     definition = """
     -> DLCPoseEstimationSelection
     ---
-    -> AnalysisNwbfile
-    dlc_pose_estimation_object_id : varchar(40)
     pose_estimation_time: datetime  # time of generation of this set of DLC results
     """
 
-    class BodyPartPosition(dj.Part):
+    class BodyPart(dj.Part):
         definition = """ # uses DeepLabCut h5 output for body part position
         -> DLCPoseEstimation
         -> DLCModel.BodyPart
-
         ---
-        frame_index : longblob     # frame index in model
-        x_pos       : longblob
-        y_pos       : longblob
-        z_pos=null  : longblob
-        likelihood  : longblob
+        -> AnalysisNwbfile
+        dlc_pose_estimation_object_id : varchar(80)
         """
 
     def make(self, key):
@@ -184,19 +171,16 @@ class DLCPoseEstimation(dj.Computed):
 
         # ID model and directories
         dlc_model = (DLCModel & key).fetch1()
-        key['analysis_file_name'] = AnalysisNwbfile().create(
-            key['nwb_file_name'])
+        bodyparts = (DLCModel.BodyPart & key).fetch('bodypart')
         task_mode, analyze_video_params, video_path, output_dir = (DLCPoseEstimationSelection & key).fetch1(
-            "task_mode", "pose_estimation_params", "video_path","pose_estimation_output_dir"
+            "task_mode", "pose_estimation_params", "video_path", "pose_estimation_output_dir"
         )
         analyze_video_params = analyze_video_params or {}
-        output_dir = find_full_path(get_dlc_root_data_dir(), output_dir)
+        output_dir = key['output_dir']
 
-        project_path = find_full_path(
-            get_dlc_root_data_dir(), dlc_model["project_path"]
-        )
+        project_path = dlc_model["project_path"]
 
-        # Triger PoseEstimation
+        # Trigger PoseEstimation
         if task_mode == "trigger":
             dlc_reader.do_pose_estimation(
                 video_path,
@@ -223,19 +207,29 @@ class DLCPoseEstimation(dj.Computed):
         # ]
         # TODO: determine where to add timestamps to the dataframe. 
         
-        # Insert dlc pose estimation into analysis NWB file.
-        nwb_analysis_file = AnalysisNwbfile()
-        key['dlc_pose_estimation_object_id'] = nwb_analysis_file.add_nwb_object(
-            analysis_file_name=key['analysis_file_name'],
-            nwb_object=dlc_result.df,
-        )
-        nwb_analysis_file.add(
-            nwb_file_name=key['nwb_file_name'],
-            analysis_file_name=key['analysis_file_name'])
-        # Insert entry into DLCPoseEstimation
-        self.insert1(key)
+        # Insert entry into DLCPoseEstimation      
         self.insert1({**key, "pose_estimation_time": creation_time})
-        # self.BodyPartPosition.insert(body_parts)
+        body_parts = dlc_result.df.columns.levels[0]
+        body_parts_df = {}
+        # Insert dlc pose estimation into analysis NWB file for each body part.
+        for body_part in bodyparts:
+            if body_part in body_parts:
+                body_parts_df[body_part] = pd.DataFrame.from_dict({
+                    c: dlc_result.df.get(body_part).get(c).values
+                    for c in dlc_result.df.get(body_part).columns
+                })
+        for body_part, df in body_parts_df.items():
+            key['analysis_file_name'] = AnalysisNwbfile().create(
+                                        key['nwb_file_name'])
+            nwb_analysis_file = AnalysisNwbfile()
+            key['dlc_pose_estimation_object_id'] = nwb_analysis_file.add_nwb_object(
+                analysis_file_name=key['analysis_file_name'],
+                nwb_object=df,
+            )
+            nwb_analysis_file.add(
+                nwb_file_name=key['nwb_file_name'],
+                analysis_file_name=key['analysis_file_name'])
+            self.BodyPart.insert1(key)
     
     def fetch_nwb(self, *attrs, **kwargs):
         return fetch_nwb(self, (AnalysisNwbfile, 'analysis_file_abs_path'),
