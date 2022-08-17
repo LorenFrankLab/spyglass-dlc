@@ -1,3 +1,4 @@
+from select import KQ_EV_SYSFLAGS
 from socket import if_indextoname
 from urllib.parse import non_hierarchical
 import numpy as np
@@ -14,7 +15,7 @@ import ruamel.yaml as yaml
 from typing import List, Dict, OrderedDict
 from pathlib import Path
 from spyglass.common.dj_helper_fn import fetch_nwb
-from spyglass.common.common_behav import VideoFile
+from spyglass.common.common_behav import VideoFile, RawPosition
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from dgramling_dlc_project import BodyPart
 from dgramling_dlc_model import DLCModel
@@ -170,6 +171,7 @@ class DLCPoseEstimation(dj.Computed):
         from dlc_reader import dlc_reader
 
         # ID model and directories
+        timestamps = self.get_timestamps(key)
         dlc_model = (DLCModel & key).fetch1()
         bodyparts = (DLCModel.BodyPart & key).fetch('bodypart')
         task_mode, analyze_video_params, video_path, output_dir = (DLCPoseEstimationSelection & key).fetch1(
@@ -193,18 +195,6 @@ class DLCPoseEstimation(dj.Computed):
         creation_time = datetime.fromtimestamp(dlc_result.creation_time).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
-        # body_parts = [
-        #     {
-        #         **key,
-        #         "body_part": k,
-        #         "frame_index": np.arange(dlc_result.nframes),
-        #         "x_pos": v["x"],
-        #         "y_pos": v["y"],
-        #         "z_pos": v.get("z"),
-        #         "likelihood": v["likelihood"],
-        #     }
-        #     for k, v in dlc_result.data.items()
-        # ]
         # TODO: determine where to add timestamps to the dataframe. 
         
         # Insert entry into DLCPoseEstimation      
@@ -219,6 +209,7 @@ class DLCPoseEstimation(dj.Computed):
                     for c in dlc_result.df.get(body_part).columns
                 })
         for body_part, df in body_parts_df.items():
+            df = self.add_timestamps(df, key)
             key['analysis_file_name'] = AnalysisNwbfile().create(
                                         key['nwb_file_name'])
             nwb_analysis_file = AnalysisNwbfile()
@@ -231,6 +222,16 @@ class DLCPoseEstimation(dj.Computed):
                 analysis_file_name=key['analysis_file_name'])
             self.BodyPart.insert1(key)
     
+    def add_timestamps(self, df, key) -> pd.DataFrame:
+        interval_list_name = f'pos {key["epoch"] + 1} valid times'
+        raw_pos_df = (
+            RawPosition & {'nwb_file_name': key['nwb_file_name'], 
+            'interval_list_name' : interval_list_name}
+            ).fetch1_dataframe()
+        raw_pos_df['time'] = raw_pos_df.index
+        raw_pos_df.set_index('video_frame_ind', inplace=True)
+        return df.join(raw_pos_df)
+
     def fetch_nwb(self, *attrs, **kwargs):
         return fetch_nwb(self, (AnalysisNwbfile, 'analysis_file_abs_path'),
                          *attrs, **kwargs)
