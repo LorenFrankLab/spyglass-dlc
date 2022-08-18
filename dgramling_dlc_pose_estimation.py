@@ -1,5 +1,6 @@
 from select import KQ_EV_SYSFLAGS
 from socket import if_indextoname
+from tkinter import TRUE
 from urllib.parse import non_hierarchical
 import numpy as np
 import pandas as pd
@@ -41,12 +42,9 @@ class DLCPoseEstimationSelection(dj.Manual):
     def infer_output_dir(cls, key, video_filename: str):
         """Return the expected pose_estimation_output_dir.
 
-        With spaces in model name are replaced with hyphens.
-        Based on convention: / video_dir / Device_{}_Recording_{}_Model_{}
-
         Parameters
         ----------
-        key: DataJoint key specifying a pairing of VideoRecording and Model.
+        key: DataJoint key specifying a pairing of VideoFile and Model.
         relative (bool): Report directory relative to get_dlc_processed_data_dir().
         mkdir (bool): Default False. Make directory if it doesn't exist.
         """
@@ -55,7 +53,7 @@ class DLCPoseEstimationSelection(dj.Manual):
         if '.h264' in video_filename:
             video_filename = video_filename.split('.')[0]
         output_dir = (
-            Path('/stelmo/nwb/pose_estimation')
+            Path('/nimbus/deeplabcut/pose_estimation')
             / Path(
                 f'{video_filename}_model_'
                 + key["model_name"].replace(" ", "-")
@@ -115,8 +113,8 @@ class DLCPoseEstimationSelection(dj.Manual):
         cls,
         key,
         task_mode="trigger",
-        params: dict = None,
-        skip_duplicates=False,
+        params: dict=None,
+        skip_duplicates=True,
     ):
         """Insert PoseEstimationTask in inferred output dir.
 
