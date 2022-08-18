@@ -76,6 +76,7 @@ class DLCSmoothInterp(dj.Computed):
         params = (DLCSmoothInterpParams() & key).fetch1()
         # Get DLC output dataframe
         dlc_df = (DLCPoseEstimation.BodyPart() & key).fetch1_dataframe()[0]
+        dlc_df = convert_to_cm(dlc_df, key)
         dlc_df = add_timestamps(dlc_df, key)
         # get interpolated points
         interp_df = interp_pos(dlc_df, **params['interp_params'])
@@ -108,6 +109,18 @@ class DLCSmoothInterp(dj.Computed):
     def fetch1_dataframe(self):
         return self.fetch_nwb()[0]['dlc_position'].set_index('time')
 
+def convert_to_cm(df, key):
+    
+    CM_TO_METERS = 100
+    raw_position = (RawPosition() &
+                    {'nwb_file_name': key['nwb_file_name'],
+                        'interval_list_name': key['interval_list_name']
+                        }).fetch_nwb()[0]
+    meters_to_pixels = raw_position['raw_position'].conversion
+    idx = pd.IndexSlice
+    df.loc[:, idx[('x','y')]] *= meters_to_pixels * CM_TO_METERS
+    return df
+
 def add_timestamps(df: pd.DataFrame, key) -> pd.DataFrame:
     interval_list_name = f'pos {key["epoch"] + 1} valid times'
     raw_pos_df = (
@@ -118,7 +131,8 @@ def add_timestamps(df: pd.DataFrame, key) -> pd.DataFrame:
     raw_pos_df.set_index('video_frame_ind', inplace=True)
     # TODO: do we need to drop indices that don't have a time associated?
     df = df.join(raw_pos_df)
-    return df.dropna(subset=['time'])
+    df = df.dropna(subset=['time'])
+    return df.set_index('time')
 
 def interp_pos(dlc_df, **kwargs):
     
