@@ -61,7 +61,8 @@ class DLCPoseEstimationSelection(dj.Manual):
                 + key["model_name"].replace(" ", "-")
             )
         )
-        output_dir.mkdir(parents=True, exist_ok=True)
+        if not os.path.exists(output_dir):
+            output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
     
     @classmethod
@@ -115,8 +116,6 @@ class DLCPoseEstimationSelection(dj.Manual):
         key,
         task_mode="trigger",
         params: dict = None,
-        relative=True,
-        mkdir=True,
         skip_duplicates=False,
     ):
         """Insert PoseEstimationTask in inferred output dir.
@@ -130,8 +129,6 @@ class DLCPoseEstimationSelection(dj.Manual):
         params (dict): Optional. Parameters passed to DLC's analyze_videos:
             videotype, gputouse, save_as_csv, batchsize, cropping, TFGPUinference,
             dynamic, robust_nframes, allow_growth, use_shelve
-        relative (bool): Report directory relative to get_dlc_processed_data_dir().
-        mkdir (bool): Default False. Make directory if it doesn't exist.
         """
         # TODO: figure out if a separate video_key is needed without portions of key that refer to model
         video_path, video_filename = cls.get_video_path(key)
@@ -166,12 +163,17 @@ class DLCPoseEstimation(dj.Computed):
         dlc_pose_estimation_object_id : varchar(80)
         """
 
+        def fetch_nwb(self, *attrs, **kwargs):
+            return fetch_nwb(self, (AnalysisNwbfile, 'analysis_file_abs_path'),
+                            *attrs, **kwargs)
+        def fetch1_dataframe(self):
+            return self.fetch_nwb()[0]['dlc_pose_estimation'].set_index('time')
+
     def make(self, key):
         """.populate() method will launch training for each PoseEstimationTask"""
         from dlc_reader import dlc_reader
 
         # ID model and directories
-        timestamps = self.get_timestamps(key)
         dlc_model = (DLCModel & key).fetch1()
         bodyparts = (DLCModel.BodyPart & key).fetch('bodypart')
         task_mode, analyze_video_params, video_path, output_dir = (DLCPoseEstimationSelection & key).fetch1(
@@ -195,7 +197,6 @@ class DLCPoseEstimation(dj.Computed):
         creation_time = datetime.fromtimestamp(dlc_result.creation_time).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
-        # TODO: determine where to add timestamps to the dataframe. 
         
         # Insert entry into DLCPoseEstimation      
         self.insert1({**key, "pose_estimation_time": creation_time})
@@ -208,14 +209,14 @@ class DLCPoseEstimation(dj.Computed):
                     c: dlc_result.df.get(body_part).get(c).values
                     for c in dlc_result.df.get(body_part).columns
                 })
-        for body_part, df in body_parts_df.items():
-            df = self.add_timestamps(df, key)
+        for body_part, part_df in body_parts_df.items():
+            part_df = self.add_timestamps(part_df, key)
             key['analysis_file_name'] = AnalysisNwbfile().create(
                                         key['nwb_file_name'])
             nwb_analysis_file = AnalysisNwbfile()
             key['dlc_pose_estimation_object_id'] = nwb_analysis_file.add_nwb_object(
                 analysis_file_name=key['analysis_file_name'],
-                nwb_object=df,
+                nwb_object=part_df,
             )
             nwb_analysis_file.add(
                 nwb_file_name=key['nwb_file_name'],
@@ -230,12 +231,14 @@ class DLCPoseEstimation(dj.Computed):
             ).fetch1_dataframe()
         raw_pos_df['time'] = raw_pos_df.index
         raw_pos_df.set_index('video_frame_ind', inplace=True)
+        # TODO: do we need to drop indices that don't have a time associated? 
         return df.join(raw_pos_df)
 
+    # TODO: should this return a dataframe with all bodyparts
+    # for a specific row in DLCPoseEstimation? Similar to get_trajectory
     def fetch_nwb(self, *attrs, **kwargs):
         return fetch_nwb(self, (AnalysisNwbfile, 'analysis_file_abs_path'),
                          *attrs, **kwargs)
-
     def fetch1_dataframe(self):
         return self.fetch_nwb()[0]['dlc_pose_estimation'].set_index('time')
 
