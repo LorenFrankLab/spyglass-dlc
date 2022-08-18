@@ -1,4 +1,4 @@
-from select import KQ_EV_SYSFLAGS
+# from select import KQ_EV_SYSFLAGS
 from socket import if_indextoname
 from tkinter import TRUE
 from urllib.parse import non_hierarchical
@@ -208,7 +208,6 @@ class DLCPoseEstimation(dj.Computed):
                     for c in dlc_result.df.get(body_part).columns
                 })
         for body_part, part_df in body_parts_df.items():
-            part_df = self.add_timestamps(part_df, key)
             key['analysis_file_name'] = AnalysisNwbfile().create(
                                         key['nwb_file_name'])
             nwb_analysis_file = AnalysisNwbfile()
@@ -220,17 +219,6 @@ class DLCPoseEstimation(dj.Computed):
                 nwb_file_name=key['nwb_file_name'],
                 analysis_file_name=key['analysis_file_name'])
             self.BodyPart.insert1(key)
-    
-    def add_timestamps(self, df, key) -> pd.DataFrame:
-        interval_list_name = f'pos {key["epoch"] + 1} valid times'
-        raw_pos_df = (
-            RawPosition & {'nwb_file_name': key['nwb_file_name'], 
-            'interval_list_name' : interval_list_name}
-            ).fetch1_dataframe()
-        raw_pos_df['time'] = raw_pos_df.index
-        raw_pos_df.set_index('video_frame_ind', inplace=True)
-        # TODO: do we need to drop indices that don't have a time associated? 
-        return df.join(raw_pos_df)
 
     # TODO: should this return a dataframe with all bodyparts
     # for a specific row in DLCPoseEstimation? Similar to get_trajectory
@@ -238,7 +226,9 @@ class DLCPoseEstimation(dj.Computed):
         return fetch_nwb(self, (AnalysisNwbfile, 'analysis_file_abs_path'),
                          *attrs, **kwargs)
     def fetch1_dataframe(self):
-        return self.fetch_nwb()[0]['dlc_pose_estimation'].set_index('time')
+        return self.fetch_nwb()[0]['dlc_pose_estimation']
+        # TODO: determine if set_index necessary
+        # return self.fetch_nwb()[0]['dlc_pose_estimation'].set_index('time')
 
     @classmethod
     def get_trajectory(cls, key, body_parts="all"):
@@ -260,14 +250,14 @@ class DLCPoseEstimation(dj.Computed):
         model_name = key["model_name"]
 
         if body_parts == "all":
-            body_parts = (cls.BodyPartPosition & key).fetch("body_part")
+            body_parts = (cls.BodyPart & key).fetch("body_part")
         else:
             body_parts = list(body_parts)
 
         df = None
         for body_part in body_parts:
             x_pos, y_pos, z_pos, likelihood = (
-                cls.BodyPartPosition & {"body_part": body_part}
+                cls.BodyPart & {"body_part": body_part}
             ).fetch1("x_pos", "y_pos", "z_pos", "likelihood")
             if not z_pos:
                 z_pos = np.zeros_like(x_pos)
