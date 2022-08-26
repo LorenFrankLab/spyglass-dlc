@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import math
 import datajoint as dj
+from datajoint.errors import DataJointError
 import deeplabcut
 import pynwb
 import os
@@ -12,19 +13,78 @@ import glob
 import ruamel.yaml as yaml
 from typing import List, Dict, OrderedDict
 from pathlib import Path
-from dlc_utils import find_full_path
+from dlc_decorators import accepts
+from dlc_utils import (
+    find_full_path,
+    get_dlc_processed_data_dir,
+    get_dlc_root_data_dir,
+    find_root_directory,
+)
 from spyglass.common.common_lab import LabTeam
 from dgramling_dlc_project import BodyPart
 from dgramling_dlc_training import DLCModelTraining
 
-schema = dj.schema('dgramling_dlc_model')
+schema = dj.schema("dgramling_dlc_model")
 
-#TODO: figure out why config needs to be overwritten
+
 @schema
-class DLCModel(dj.Manual):
+class DLCModelInput(dj.Manual):
+    """Table to hold model path if model is being input
+    from local disk instead of Spyglass
+    """
+
     definition = """
-    model_name           : varchar(64)  # User-friendly model name
-    -> DLCModelTraining
+    dlc_model_local_name : varchar(64)  # Different than dlc_model_name in DLCModelSource... not great
+    ---
+    project_path         : varchar(255) # Path to project directory
+    """
+    # TODO: brainstorm what actually lives in this function
+
+    def insert1(self, key, **kwargs):
+
+        project_path = Path(key["project_path"])
+        assert project_path.exists(), "project path does not exist"
+        super().insert1(key, **kwargs)
+
+
+@schema
+class DLCModelSource(dj.Manual):
+    """Table to determine whether model originates from
+    upstream DLCModelTraining table, or from local directory
+    """
+
+    definition = """
+    dlc_model_name : varchar(64)    # User-friendly model name
+    ---
+    source         : enum ('FromUpstream', 'FromImport')
+    """
+
+    class FromImport(dj.Part):
+        definition = """
+        -> DLCModelSource
+        -> DLCModelInput
+        """
+
+    class FromUpstream(dj.Part):
+        definition = """
+        -> DLCModelSource
+        -> DLCModelTraining
+        """
+
+    @classmethod
+    @accepts(None, ("FromUpstream", "FromImport"))
+    def insert_entry(cls, key, source: str = "FromUpstream"):
+
+        dlc_model_name = key["dlc_model_name"]
+        cls.insert1({"dlc_model_name": dlc_model_name, "source": source})
+        part_table = getattr(cls, source)
+        part_table.insert1(key)
+
+
+@schema
+class DLCModel(dj.Computed):
+    definition = """
+    -> DLCModelSource
     ---
     task                 : varchar(32)  # Task in the config yaml
     date                 : varchar(16)  # Date in the config yaml
@@ -47,6 +107,17 @@ class DLCModel(dj.Manual):
         -> BodyPart
         """
 
+    def make(self, key):
+        table_source = DLCModelSource & key().fetch("source")
+        source_table = getattr(DLCModelSource, table_source)
+
+        self.insert1(key)
+        return None
+
+    @classmethod
+    def insert_model(cls, key):
+        pass
+
     @classmethod
     def insert_new_model(
         cls,
@@ -58,7 +129,7 @@ class DLCModel(dj.Manual):
         project_path=None,
         model_description="",
         model_prefix="",
-        paramset_idx: int = None,
+        paramset_name: str = None,
         prompt=True,
         params=None,
     ):
@@ -78,7 +149,7 @@ class DLCModel(dj.Manual):
         params (dict): Optional. If dlc_config is path, dict of override items
         """
         from deeplabcut.utils.auxiliaryfunctions import GetScorerName
-        from dlc_reader import dlc_reader
+        import dlc_reader
 
         # handle dlc_config being a yaml file
         if not isinstance(dlc_config, dict):
@@ -95,7 +166,6 @@ class DLCModel(dj.Manual):
         # ---- Get and resolve project path ----
         project_path = find_full_path(
             get_dlc_root_data_dir(), dlc_config.get("project_path", project_path)
-
         )
         dlc_config["project_path"] = str(project_path)  # update if different
         root_dir = find_root_directory(get_dlc_root_data_dir(), project_path)
@@ -114,7 +184,6 @@ class DLCModel(dj.Manual):
         # ---- Get scorer name ----
         # "or 'f'" below covers case where config returns None. str_to_bool handles else
         scorer_legacy = str_to_bool(dlc_config.get("scorer_legacy", "f"))
-
 
         dlc_scorer = GetScorerName(
             cfg=dlc_config,
@@ -138,7 +207,7 @@ class DLCModel(dj.Manual):
             "trainingsetindex": int(trainingsetindex),
             # TODO: replace project_path
             "project_path": project_path.relative_to(root_dir).as_posix(),
-            "paramset_idx": paramset_idx,
+            "paramset_name": paramset_name,
             "config_template": dlc_config,
         }
 
@@ -168,6 +237,7 @@ class DLCModel(dj.Manual):
             if BodyPart.extract_new_body_parts(dlc_config, verbose=False).size > 0:
                 BodyPart.insert_from_config(dlc_config, prompt=prompt)
             cls.BodyPart.insert((model_name, bp) for bp in dlc_config["bodyparts"])
+
 
 @schema
 class DLCModelEvaluation(dj.Computed):
@@ -238,3 +308,12 @@ class DLCModelEvaluation(dj.Computed):
                 test_error_p=results["Test error with p-cutoff"],
             )
         )
+
+
+def str_to_bool(value) -> bool:
+    """Return whether the provided string represents true. Otherwise false."""
+    # Due to distutils equivalent depreciation in 3.10
+    # Adopted from github.com/PostHog/posthog/blob/master/posthog/utils.py
+    if not value:
+        return False
+    return str(value).lower() in ("y", "yes", "t", "true", "on", "1")
