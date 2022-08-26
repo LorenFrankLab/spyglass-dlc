@@ -4,10 +4,8 @@ from tkinter import TRUE
 from urllib.parse import non_hierarchical
 import numpy as np
 import pandas as pd
-import math
 import datajoint as dj
 from datetime import datetime
-import deeplabcut
 import pynwb
 import os
 import sys
@@ -16,13 +14,14 @@ import ruamel.yaml as yaml
 from typing import List, Dict, OrderedDict
 from pathlib import Path
 from spyglass.common.dj_helper_fn import fetch_nwb
-from spyglass.common.common_behav import VideoFile, RawPosition
+from spyglass.common.common_behav import VideoFile
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from dgramling_dlc_project import BodyPart
 from dgramling_dlc_model import DLCModel
 from dlc_utils import find_full_path
 
-schema = dj.schema('dgramling_dlc_pose_estimation')
+schema = dj.schema("dgramling_dlc_pose_estimation")
+
 
 @schema
 class DLCPoseEstimationSelection(dj.Manual):
@@ -37,7 +36,7 @@ class DLCPoseEstimationSelection(dj.Manual):
     """
 
     # I think it makes more sense to just use a set output directory of 'cumulus/deeplabcut/pose_estimation/'
-    # or a directory like that... or maybe on stelmo? depends on what Loren/Eric think 
+    # or a directory like that... or maybe on stelmo? depends on what Loren/Eric think
     @classmethod
     def infer_output_dir(cls, key, video_filename: str):
         """Return the expected pose_estimation_output_dir.
@@ -50,25 +49,21 @@ class DLCPoseEstimationSelection(dj.Manual):
         """
         # TODO: add check to make sure interval_list_name refers to a single epoch
         # Or make key include epoch in and of itself instead of interval_list_name
-        if '.h264' in video_filename:
-            video_filename = video_filename.split('.')[0]
-        output_dir = (
-            Path('/nimbus/deeplabcut/pose_estimation')
-            / Path(
-                f'{video_filename}_model_'
-                + key["model_name"].replace(" ", "-")
-            )
+        if ".h264" in video_filename:
+            video_filename = video_filename.split(".")[0]
+        output_dir = Path("/nimbus/deeplabcut/output") / Path(
+            f"{video_filename}_model_" + key["model_name"].replace(" ", "-")
         )
         if not os.path.exists(output_dir):
             output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
-    
+
     @classmethod
     def get_video_path(cls, key):
-        '''
+        """
         Given nwb_file_name and interval_list_name returns specified
         video file filename and path
-        
+
         Parameters
         ----------
         key : dict
@@ -79,33 +74,38 @@ class DLCPoseEstimationSelection(dj.Manual):
             path to the video file, including video filename
         video_filename : str
             filename of the video
-        '''
+        """
         # TODO: add check to make sure interval_list_name refers to a single epoch
         # Or make key include epoch in and of itself instead of interval_list_name
-        epoch = int(key['interval_list_name']
-                    .replace('pos ', '')
-                    .replace(' valid times', '')
-                    ) + 1
-        video_info = (VideoFile() &
-                      {'nwb_file_name': key['nwb_file_name'],
-                       'epoch': epoch}).fetch1()
-        io = pynwb.NWBHDF5IO('/stelmo/nwb/raw/' +
-                             video_info['nwb_file_name'], 'r')
+        epoch = (
+            int(
+                key["interval_list_name"]
+                .replace("pos ", "")
+                .replace(" valid times", "")
+            )
+            + 1
+        )
+        video_info = (
+            VideoFile() & {"nwb_file_name": key["nwb_file_name"], "epoch": epoch}
+        ).fetch1()
+        io = pynwb.NWBHDF5IO("/stelmo/nwb/raw/" + video_info["nwb_file_name"], "r")
         nwb_file = io.read()
-        nwb_video = nwb_file.objects[video_info['video_file_object_id']]
+        nwb_video = nwb_file.objects[video_info["video_file_object_id"]]
         video_filepath = nwb_video.external_file[0]
-        video_dir = os.path.dirname(video_filepath) + '/'
+        video_dir = os.path.dirname(video_filepath) + "/"
         video_filename = video_filepath.split(video_dir)[-1]
         return video_filepath, video_filename
-    
-    #TODO: this shouldn't be a classmethod...
+
+    # TODO: this shouldn't be a classmethod...
     @classmethod
-    def check_videofile(cls, video_path, video_filename, output_path: bool=None):
-        if 'mp4' in video_filename:
+    def check_videofile(cls, video_path, video_filename, output_path: bool = None):
+        if "mp4" in video_filename:
             return video_path
         from dlc_utils import _convert_mp4
-        output_filename = _convert_mp4(video_filename, video_path,
-                            output_path, videotype='mp4')
+
+        output_filename = _convert_mp4(
+            video_filename, video_path, output_path, videotype="mp4"
+        )
         return output_filename
 
     @classmethod
@@ -113,7 +113,7 @@ class DLCPoseEstimationSelection(dj.Manual):
         cls,
         key,
         task_mode="trigger",
-        params: dict=None,
+        params: dict = None,
         skip_duplicates=True,
     ):
         """Insert PoseEstimationTask in inferred output dir.
@@ -162,10 +162,12 @@ class DLCPoseEstimation(dj.Computed):
         """
 
         def fetch_nwb(self, *attrs, **kwargs):
-            return fetch_nwb(self, (AnalysisNwbfile, 'analysis_file_abs_path'),
-                            *attrs, **kwargs)
+            return fetch_nwb(
+                self, (AnalysisNwbfile, "analysis_file_abs_path"), *attrs, **kwargs
+            )
+
         def fetch1_dataframe(self):
-            return self.fetch_nwb()[0]['dlc_pose_estimation'].set_index('time')
+            return self.fetch_nwb()[0]["dlc_pose_estimation"].set_index("time")
 
     def make(self, key):
         """.populate() method will launch training for each PoseEstimationTask"""
@@ -173,12 +175,17 @@ class DLCPoseEstimation(dj.Computed):
 
         # ID model and directories
         dlc_model = (DLCModel & key).fetch1()
-        bodyparts = (DLCModel.BodyPart & key).fetch('bodypart')
-        task_mode, analyze_video_params, video_path, output_dir = (DLCPoseEstimationSelection & key).fetch1(
-            "task_mode", "pose_estimation_params", "video_path", "pose_estimation_output_dir"
+        bodyparts = (DLCModel.BodyPart & key).fetch("bodypart")
+        task_mode, analyze_video_params, video_path, output_dir = (
+            DLCPoseEstimationSelection & key
+        ).fetch1(
+            "task_mode",
+            "pose_estimation_params",
+            "video_path",
+            "pose_estimation_output_dir",
         )
         analyze_video_params = analyze_video_params or {}
-        output_dir = key['output_dir']
+        output_dir = key["output_dir"]
 
         project_path = dlc_model["project_path"]
 
@@ -195,38 +202,42 @@ class DLCPoseEstimation(dj.Computed):
         creation_time = datetime.fromtimestamp(dlc_result.creation_time).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
-        
-        # Insert entry into DLCPoseEstimation      
+
+        # Insert entry into DLCPoseEstimation
         self.insert1({**key, "pose_estimation_time": creation_time})
         body_parts = dlc_result.df.columns.levels[0]
         body_parts_df = {}
         # Insert dlc pose estimation into analysis NWB file for each body part.
         for body_part in bodyparts:
             if body_part in body_parts:
-                body_parts_df[body_part] = pd.DataFrame.from_dict({
-                    c: dlc_result.df.get(body_part).get(c).values
-                    for c in dlc_result.df.get(body_part).columns
-                })
+                body_parts_df[body_part] = pd.DataFrame.from_dict(
+                    {
+                        c: dlc_result.df.get(body_part).get(c).values
+                        for c in dlc_result.df.get(body_part).columns
+                    }
+                )
         for body_part, part_df in body_parts_df.items():
-            key['analysis_file_name'] = AnalysisNwbfile().create(
-                                        key['nwb_file_name'])
+            key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
             nwb_analysis_file = AnalysisNwbfile()
-            key['dlc_pose_estimation_object_id'] = nwb_analysis_file.add_nwb_object(
-                analysis_file_name=key['analysis_file_name'],
+            key["dlc_pose_estimation_object_id"] = nwb_analysis_file.add_nwb_object(
+                analysis_file_name=key["analysis_file_name"],
                 nwb_object=part_df,
             )
             nwb_analysis_file.add(
-                nwb_file_name=key['nwb_file_name'],
-                analysis_file_name=key['analysis_file_name'])
+                nwb_file_name=key["nwb_file_name"],
+                analysis_file_name=key["analysis_file_name"],
+            )
             self.BodyPart.insert1(key)
 
     # TODO: should this return a dataframe with all bodyparts
     # for a specific row in DLCPoseEstimation? Similar to get_trajectory
     def fetch_nwb(self, *attrs, **kwargs):
-        return fetch_nwb(self, (AnalysisNwbfile, 'analysis_file_abs_path'),
-                         *attrs, **kwargs)
+        return fetch_nwb(
+            self, (AnalysisNwbfile, "analysis_file_abs_path"), *attrs, **kwargs
+        )
+
     def fetch1_dataframe(self):
-        return self.fetch_nwb()[0]['dlc_pose_estimation']
+        return self.fetch_nwb()[0]["dlc_pose_estimation"]
         # TODO: determine if set_index necessary
         # return self.fetch_nwb()[0]['dlc_pose_estimation'].set_index('time')
 
