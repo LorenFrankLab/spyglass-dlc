@@ -11,6 +11,10 @@ from operator import itemgetter
 import bottleneck as bn
 from typing import List, Dict, OrderedDict
 from pathlib import Path
+from position_tools import (
+    get_speed,
+    interpolate_nan,
+)
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from spyglass.common.common_behav import RawPosition
@@ -31,9 +35,10 @@ class DLCSmoothInterpParams(dj.Manual):
     """
 
     @classmethod
-    def insert_params(cls, key, params: dict, skip_duplicates=True):
+    def insert_params(cls, params_name: str, params: dict, skip_duplicates=True):
+
         cls.insert1(
-            {"dlc_si_params_name": key["params_name"], "params": params},
+            {"dlc_si_params_name": params_name, "params": params},
             skip_duplicates=skip_duplicates,
         )
 
@@ -77,10 +82,26 @@ class DLCSmoothInterp(dj.Computed):
         key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
         # Get labels to smooth from Parameters table
         params = (DLCSmoothInterpParams() & key).fetch1()
+        max_plausible_speed = params["params"].pop("max_plausible_speed")
+        speed_smoothing_std_dev = params["params"].pop("speed_smoothing_std_dev")
+        sampling_rate = params["params"].pop("sampling_rate")
         # Get DLC output dataframe
         dlc_df = (DLCPoseEstimation.BodyPart() & key).fetch1_dataframe()[0]
         dlc_df = convert_to_cm(dlc_df, key)
         dlc_df = add_timestamps(dlc_df, key)
+        # Calculate speed
+        idx = pd.IndexSlice
+        LED_speed = get_speed(
+            dlc_df.loc[:, idx[("x", "y")]],
+            dlc_df["time"],
+            sigma=speed_smoothing_std_dev,
+            sampling_frequency=sampling_rate,
+        )
+        # Set points to NaN where the speed is too fast
+        is_too_fast = LED_speed > max_plausible_speed
+        dlc_df.loc[idx[is_too_fast], idx[("x", "y")]] = np.nan
+        # Interpolate the NaN points
+        dlc_df.loc[:, idx[("x", "y")]] = interpolate_nan(dlc_df.loc[:, idx[("x", "y")]])
         # get interpolated points
         interp_df = interp_pos(dlc_df, **params["interp_params"])
         if "smoothing_duration" in params["smoothing_params"]:
