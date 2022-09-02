@@ -1,21 +1,16 @@
-from socket import if_indextoname
-from urllib.parse import non_hierarchical
 import numpy as np
 import pandas as pd
 import datajoint as dj
-import deeplabcut
-import pynwb
 import inspect
 import os
-import sys
 import ruamel.yaml as yaml
 from itertools import combinations
-from typing import List, Dict, OrderedDict
 from pathlib import Path
-from dlc_utils import find_full_path
-from dgramling_dlc_project import DLCProject, TrainingSet
+from .dlc_utils import find_full_path
+from .dgramling_dlc_project import DLCProject
 
-schema = dj.schema('dgramling_dlc_training')
+schema = dj.schema("dgramling_dlc_training")
+
 
 @schema
 class DLCModelTrainingParams(dj.Lookup):
@@ -31,8 +26,7 @@ class DLCModelTrainingParams(dj.Lookup):
     skipped_parameters = ("project_path", "video_sets")
 
     @classmethod
-    def insert_new_params(
-        cls, paramset_name: str, params: dict):
+    def insert_new_params(cls, paramset_name: str, params: dict):
         """
         Insert a new set of training parameters into dlc.TrainingParamSet.
 
@@ -58,15 +52,17 @@ class DLCModelTrainingParams(dj.Lookup):
             "params": params,
         }
         param_query = cls & {
-            "dlc_training_params_name": param_dict["dlc_training_params_name"]}
+            "dlc_training_params_name": param_dict["dlc_training_params_name"]
+        }
         # If the specified param-set already exists
         # Not sure we need this part, as much just a check if the name is the same
         if param_query:
             existing_paramset_name = param_query.fetch1("dlc_training_params_name")
             if existing_paramset_name == paramset_name:  # If existing name same:
                 return print(
-                    f'New param set not added\n'
-                    f'A param set with name: {paramset_name} already exists')
+                    f"New param set not added\n"
+                    f"A param set with name: {paramset_name} already exists"
+                )
         else:
             cls.insert1(param_dict)  # if duplicate, will raise duplicate error
             # if this will raise duplicate error, why is above check needed? @datajoint
@@ -75,14 +71,15 @@ class DLCModelTrainingParams(dj.Lookup):
 @schema
 class DLCModelTrainingSelection(dj.Manual):
     definition = """      # Specification for a DLC model training instance
-    -> TrainingSet           # labeled video(s) for training
     -> DLCModelTrainingParams
+    -> DLCProject
     training_id     : int
     ---
     model_prefix='' : varchar(32)
     project_path='' : varchar(255) # DLC's project_path in config relative to root
     """
     # What is the purpose of the training_id and project_path
+
 
 @schema
 class DLCModelTraining(dj.Computed):
@@ -112,11 +109,12 @@ class DLCModelTraining(dj.Computed):
             from deeplabcut.utils.auxiliaryfunctions import (
                 GetModelFolder as get_model_folder,
             )
-        config_path = (DLCProject() & key).fetch1('config_path')
+        config_path = (DLCProject() & key).fetch1("config_path")
         dlc_config = read_config(config_path)
-        project_path = dlc_config['project_path']
+        project_path = dlc_config["project_path"]
 
         # ---- Build and save DLC configuration (yaml) file ----
+        _, dlc_config = dlc_reader.read_yaml(project_path)
         dlc_config.update((DLCModelTrainingParams & key).fetch1("params"))
         dlc_config.update(
             {
@@ -126,9 +124,7 @@ class DLCModelTraining(dj.Computed):
                     int(dlc_config["trainingsetindex"])
                 ],
                 "training_filelist_datajoint": [  # don't overwrite origin video_sets
-                    Path(fp)
-                    for fn, fp in (TrainingSet & key).fetch()
-                    if 'video' in fn
+                    Path(fp) for fp in (DLCProject.File & key).fetch("file_path")
                 ],
             }
         )
