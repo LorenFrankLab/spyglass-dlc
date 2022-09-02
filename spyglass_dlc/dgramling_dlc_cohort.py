@@ -24,7 +24,7 @@ class DLCSmoothInterpCohortSelection(dj.Manual):
     """ """
 
     definition = """
-    dlc_si_cohort_selection_name : varchar(120):
+    dlc_si_cohort_selection_name : varchar(120)
     ---
     -> DLCSmoothInterp
     bodyparts : blob
@@ -49,6 +49,14 @@ class DLCSmoothInterpCohort(dj.Computed):
         dlc_position_object_id : varchar(80)
         """
 
+        def fetch_nwb(self, *attrs, **kwargs):
+            return fetch_nwb(
+                self, (AnalysisNwbfile, "analysis_file_abs_path"), *attrs, **kwargs
+            )
+
+        def fetch1_dataframe(self):
+            return self.fetch_nwb()[0]["dlc_position"].set_index("time")
+
     def make(self, key):
         # from Jen Guidera
         self.insert1(key)
@@ -61,11 +69,3 @@ class DLCSmoothInterpCohort(dj.Computed):
                 **key,
             }
             DLCSmoothInterpCohort.BodyPart.insert1(entry_key, skip_duplicates=True)
-
-    def fetch_nwb(self, *attrs, **kwargs):
-        return fetch_nwb(
-            self, (AnalysisNwbfile, "analysis_file_abs_path"), *attrs, **kwargs
-        )
-
-    def fetch1_dataframe(self):
-        return self.fetch_nwb()[0]["dlc_position"].set_index("time")

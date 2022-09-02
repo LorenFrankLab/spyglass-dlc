@@ -1,7 +1,3 @@
-# from select import KQ_EV_SYSFLAGS
-from socket import if_indextoname
-from tkinter import TRUE
-from urllib.parse import non_hierarchical
 import numpy as np
 import pandas as pd
 import datajoint as dj
@@ -16,9 +12,9 @@ from pathlib import Path
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_behav import VideoFile
 from spyglass.common.common_nwbfile import AnalysisNwbfile
-from dgramling_dlc_project import BodyPart
-from dgramling_dlc_model import DLCModel
-from dlc_utils import find_full_path
+from .dgramling_dlc_project import BodyPart
+from .dgramling_dlc_model import DLCModel
+from .dlc_utils import find_full_path
 
 schema = dj.schema("dgramling_dlc_pose_estimation")
 
@@ -101,7 +97,7 @@ class DLCPoseEstimationSelection(dj.Manual):
     def check_videofile(cls, video_path, video_filename, output_path: bool = None):
         if "mp4" in video_filename:
             return video_path
-        from dlc_utils import _convert_mp4
+        from .dlc_utils import _convert_mp4
 
         output_filename = _convert_mp4(
             video_filename, video_path, output_path, videotype="mp4"
@@ -167,11 +163,11 @@ class DLCPoseEstimation(dj.Computed):
             )
 
         def fetch1_dataframe(self):
-            return self.fetch_nwb()[0]["dlc_pose_estimation"].set_index("time")
+            return self.fetch_nwb()[0]["dlc_pose_estimation"]
 
     def make(self, key):
         """.populate() method will launch training for each PoseEstimationTask"""
-        from dlc_reader import dlc_reader
+        import dlc_reader
 
         # ID model and directories
         dlc_model = (DLCModel & key).fetch1()
@@ -229,17 +225,17 @@ class DLCPoseEstimation(dj.Computed):
             )
             self.BodyPart.insert1(key)
 
-    # TODO: should this return a dataframe with all bodyparts
-    # for a specific row in DLCPoseEstimation? Similar to get_trajectory
-    def fetch_nwb(self, *attrs, **kwargs):
-        return fetch_nwb(
-            self, (AnalysisNwbfile, "analysis_file_abs_path"), *attrs, **kwargs
+    def fetch_dataframe(self, *attrs, **kwargs):
+        entries = (self.BodyPart & self).fetch("KEY")
+        return pd.concat(
+            {
+                entry["bodypart"]: (self.BodyPart & entry).fetch_nwb()[0][
+                    "dlc_pose_estimation"
+                ]
+                for entry in entries
+            },
+            axis=1,
         )
-
-    def fetch1_dataframe(self):
-        return self.fetch_nwb()[0]["dlc_pose_estimation"]
-        # TODO: determine if set_index necessary
-        # return self.fetch_nwb()[0]['dlc_pose_estimation'].set_index('time')
 
     @classmethod
     def get_trajectory(cls, key, body_parts="all"):

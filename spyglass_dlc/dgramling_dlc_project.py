@@ -1,19 +1,13 @@
-from socket import if_indextoname
-from urllib.parse import non_hierarchical
-import numpy as np
-import pandas as pd
+`import numpy as np
 import datajoint as dj
-import deeplabcut
-import pynwb
 import os
-import sys
 import glob
 import ruamel.yaml
 from itertools import combinations
 from typing import List, Dict, OrderedDict
 from pathlib import Path
 from spyglass.common.common_lab import LabTeam
-from dlc_utils import _convert_mp4
+from .dlc_utils import _convert_mp4
 
 
 schema = dj.schema("dgramling_dlc_project")
@@ -45,7 +39,7 @@ class DLCProject(dj.Manual):
     frames_per_video : int          # number of frames to extract from each video
     config_path      : varchar(120) # path to config.yaml for model
     """
-    # TODO: add option to load project that has already been created outside of datajoint
+
     class BodyPart(dj.Part):
         """Part table to hold bodyparts used in each project."""
 
@@ -63,6 +57,10 @@ class DLCProject(dj.Manual):
         file_path: varchar(255)
         """
 
+    def insert1(self, key, **kwargs):
+        # TODO add key validation here
+        super().insert1(key, **kwargs)
+
     @classmethod
     def insert_existing_project(
         cls,
@@ -72,6 +70,7 @@ class DLCProject(dj.Manual):
         project_path: str,
         **kwargs,
     ):
+        # TODO: add option to load project that has already been created outside of datajoint
         pass
 
     @classmethod
@@ -139,8 +138,9 @@ class DLCProject(dj.Manual):
             videos = [
                 video for video in videos if any(map(video.__contains__, video_names))
             ]
+        from deeplabcut import create_new_project
 
-        config_path = deeplabcut.create_new_project(
+        config_path = create_new_project(
             project_name,
             lab_team,
             videos,

@@ -1,28 +1,23 @@
-from socket import if_indextoname
-from urllib.parse import non_hierarchical
 import numpy as np
 import pandas as pd
-import math
 import datajoint as dj
 from datajoint.errors import DataJointError
-import deeplabcut
-import pynwb
 import os
 import sys
 import glob
 import ruamel.yaml as yaml
 from typing import List, Dict, OrderedDict
 from pathlib import Path
-from dlc_decorators import accepts
-from dlc_utils import (
+from .dlc_decorators import accepts
+from .dlc_utils import (
     find_full_path,
     get_dlc_processed_data_dir,
     get_dlc_root_data_dir,
     find_root_directory,
 )
 from spyglass.common.common_lab import LabTeam
-from dgramling_dlc_project import BodyPart
-from dgramling_dlc_training import DLCModelTraining
+from .dgramling_dlc_project import BodyPart
+from .dgramling_dlc_training import DLCModelTraining
 
 schema = dj.schema("dgramling_dlc_model")
 
@@ -231,12 +226,11 @@ class DLCModel(dj.Computed):
         # ---- Save DJ-managed config ----
         _ = dlc_reader.save_yaml(project_path, dlc_config)
         # ____ Insert into table ----
-        with cls.connection.transaction:
-            cls.insert1(model_dict)
-            # Returns array, so check size for unambiguous truth value
-            if BodyPart.extract_new_body_parts(dlc_config, verbose=False).size > 0:
-                BodyPart.insert_from_config(dlc_config, prompt=prompt)
-            cls.BodyPart.insert((model_name, bp) for bp in dlc_config["bodyparts"])
+        cls.insert1(model_dict)
+        # Returns array, so check size for unambiguous truth value
+        if BodyPart.extract_new_body_parts(dlc_config, verbose=False).size > 0:
+            BodyPart.insert_from_config(dlc_config, prompt=prompt)
+        cls.BodyPart.insert((model_name, bp) for bp in dlc_config["bodyparts"])
 
 
 @schema
