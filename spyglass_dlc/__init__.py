@@ -1,4 +1,4 @@
-from .dgramling_dlc_project import DLCProject
+from .dgramling_dlc_project import DLCProject, BodyPart
 from .dgramling_dlc_training import (
     DLCModelTrainingParams,
     DLCModelTrainingSelection,
