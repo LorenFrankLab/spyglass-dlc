@@ -4,10 +4,12 @@
 # install: conda env create -f environment.yaml
 # update:  conda env update -f environment.yaml
 # after installing do the following:
-# export LD_LIBRARY_PATH=~/path/to/anaconda3/envs/dlc-spyglass/lib/:$LD_LIBRARY_PATH
+# conda activate spyglass-dlc
+# conda env config vars set LD_LIBRARY_PATH=~/path/to/anaconda3/envs/spyglass-dlc/lib/
 # run mamba install -c conda-forge wxpython
 # run mamba install pytorch torchvision torchaudio cudatoolkit=11.6 -c pytorch -c conda-forge
 # cd into spyglass and run pip install -e .
+# cd into spyglass-dlc and run pip install -e .
 name: spyglass-dlc
 channels:
   - conda-forge
