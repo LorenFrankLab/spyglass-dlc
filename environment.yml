@@ -8,7 +8,7 @@
 # run mamba install -c conda-forge wxpython
 # run mamba install pytorch torchvision torchaudio cudatoolkit=11.6 -c pytorch -c conda-forge
 # cd into spyglass and run pip install -e .
-name: dlc-spyglass
+name: spyglass-dlc
 channels:
   - conda-forge
   - defaults
