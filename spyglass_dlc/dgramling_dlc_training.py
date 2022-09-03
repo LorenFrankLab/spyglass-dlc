@@ -71,9 +71,10 @@ class DLCModelTrainingParams(dj.Lookup):
 @schema
 class DLCModelTrainingSelection(dj.Manual):
     definition = """      # Specification for a DLC model training instance
-    -> DLCModelTrainingParams
     -> DLCProject
-    training_id     : int
+    -> DLCModelTrainingParams
+    training_id     : int # unique integer, 
+    # allows for multiple training runs for a specific parameter set and project
     ---
     model_prefix='' : varchar(32)
     project_path='' : varchar(255) # DLC's project_path in config relative to root
