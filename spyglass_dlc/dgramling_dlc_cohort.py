@@ -13,6 +13,7 @@ from typing import List, Dict, OrderedDict
 from pathlib import Path
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
+from spyglass.common.common_interval import IntervalList
 from .dgramling_dlc_position import DLCSmoothInterp
 from .dgramling_dlc_project import BodyPart
 
@@ -21,9 +22,13 @@ schema = dj.schema("dgramling_dlc_cohort")
 
 @schema
 class DLCSmoothInterpCohortSelection(dj.Manual):
-    """ """
+    """
+    Table to specify which combination of bodyparts from DLCSmoothInterp
+    get combined into a cohort
+    """
 
     definition = """
+    -> IntervalList
     dlc_si_cohort_selection_name : varchar(120)
     ---
     -> DLCSmoothInterp
@@ -34,10 +39,15 @@ class DLCSmoothInterpCohortSelection(dj.Manual):
 
 @schema
 class DLCSmoothInterpCohort(dj.Computed):
-    """ """
+    """
+    Table to combine multiple bodyparts from DLCSmoothInterp
+    to enable centroid/orientation calculations
+    """
 
+    # Need to ensure that nwb_file_name/epoch/interval list name endure as primary keys
     definition = """
     -> DLCSmoothInterpCohortSelection
+    ---
     """
 
     class BodyPart(dj.Part):
