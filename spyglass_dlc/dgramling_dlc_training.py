@@ -79,7 +79,13 @@ class DLCModelTrainingSelection(dj.Manual):
     model_prefix='' : varchar(32)
     project_path='' : varchar(255) # DLC's project_path in config relative to root
     """
-    # What is the purpose of the training_id and project_path
+
+    def insert1(self, key, **kwargs):
+        training_id = key["training_id"]
+        if training_id is None:
+            training_id = (dj.U().aggr(self, n="max(training_id)").fetch1("n") or 0) + 1
+        key["training_id"].update(training_id)
+        super().insert1(key, **kwargs)
 
 
 @schema
