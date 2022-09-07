@@ -56,7 +56,7 @@ class DLCSmoothInterpCohort(dj.Computed):
         -> DLCSmoothInterp
         ---
         -> AnalysisNwbfile
-        dlc_position_object_id : varchar(80)
+        dlc_smooth_interp_object_id : varchar(80)
         """
 
         def fetch_nwb(self, *attrs, **kwargs):
@@ -65,7 +65,7 @@ class DLCSmoothInterpCohort(dj.Computed):
             )
 
         def fetch1_dataframe(self):
-            return self.fetch_nwb()[0]["dlc_position"].set_index("time")
+            return self.fetch_nwb()[0]["dlc_smooth_interp"].set_index("time")
 
     def make(self, key):
         # from Jen Guidera

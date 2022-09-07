@@ -1,13 +1,9 @@
 import numpy as np
 import pandas as pd
-import math
 import datajoint as dj
-from datetime import datetime
 import pynwb
 import os
 import sys
-from itertools import groupby
-from operator import itemgetter
 import bottleneck as bn
 from typing import List, Dict, OrderedDict
 from pathlib import Path
@@ -100,7 +96,9 @@ class DLCOrientation(dj.Computed):
         )
         # convert back to between -pi and pi
         orientation[~is_nan] = np.angle(np.exp(1j * orientation[~is_nan]))
-        final_df = pd.DataFrame(orientation, index=pos_df.index)
+        final_df = pd.DataFrame(
+            orientation, columns=["orientation"], index=pos_df.index
+        )
         nwb_analysis_file = AnalysisNwbfile()
         key["dlc_orientation_object_id"] = nwb_analysis_file.add_nwb_object(
             analysis_file_name=key["analysis_file_name"],
