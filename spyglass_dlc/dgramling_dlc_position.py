@@ -56,6 +56,7 @@ class DLCSmoothInterpParams(dj.Manual):
 class DLCSmoothInterpSelection(dj.Manual):
     definition = """
     -> DLCPoseEstimation
+    -> RawPosition
     -> BodyPart
     -> DLCSmoothInterpParams
     ---
@@ -69,7 +70,7 @@ class DLCSmoothInterp(dj.Computed):
     -> DLCSmoothInterpSelection
     ---
     -> AnalysisNwbfile
-    dlc_position_object_id : varchar(80)
+    dlc_smooth_interp_object_id : varchar(80)
     """
 
     def make(self, key):
@@ -112,7 +113,7 @@ class DLCSmoothInterp(dj.Computed):
 
         # Add dataframe to AnalysisNwbfile
         nwb_analysis_file = AnalysisNwbfile()
-        key["dlc_position_object_id"] = nwb_analysis_file.add_nwb_object(
+        key["dlc_smooth_interp_object_id"] = nwb_analysis_file.add_nwb_object(
             analysis_file_name=key["analysis_file_name"],
             nwb_object=final_df,
         )
@@ -127,7 +128,7 @@ class DLCSmoothInterp(dj.Computed):
         )
 
     def fetch1_dataframe(self):
-        return self.fetch_nwb()[0]["dlc_position"].set_index("time")
+        return self.fetch_nwb()[0]["dlc_smooth_interp"].set_index("time")
 
 
 def convert_to_cm(df, key):

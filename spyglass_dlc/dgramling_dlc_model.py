@@ -1,23 +1,22 @@
+from pathlib import Path, PosixPath, PurePath
+import os
+import sys
+import glob
+from typing import List, Dict, OrderedDict
 import numpy as np
 import pandas as pd
 import datajoint as dj
 from datajoint.errors import DataJointError
-import os
-import sys
-import glob
 import ruamel.yaml as yaml
-from typing import List, Dict, OrderedDict
-from pathlib import Path
+from spyglass.common.common_lab import LabTeam
+from .dgramling_dlc_project import BodyPart, DLCProject
+from .dgramling_dlc_training import DLCModelTraining, DLCModelTrainingParams
 from .dlc_decorators import accepts
 from .dlc_utils import (
     find_full_path,
-    get_dlc_processed_data_dir,
     get_dlc_root_data_dir,
-    find_root_directory,
 )
-from spyglass.common.common_lab import LabTeam
-from .dgramling_dlc_project import BodyPart
-from .dgramling_dlc_training import DLCModelTraining
+from . import dlc_reader
 
 schema = dj.schema("dgramling_dlc_model")
 
@@ -28,8 +27,9 @@ class DLCModelInput(dj.Manual):
     from local disk instead of Spyglass
     """
 
-    definition = """
-    dlc_model_local_name : varchar(64)  # Different than dlc_model_name in DLCModelSource... not great
+    definition = """    
+    dlc_model_name : varchar(64)  # Different than dlc_model_name in DLCModelSource... not great
+    -> DLCProject
     ---
     project_path         : varchar(255) # Path to project directory
     """
@@ -49,6 +49,7 @@ class DLCModelSource(dj.Manual):
     """
 
     definition = """
+    -> DLCProject
     dlc_model_name : varchar(64)    # User-friendly model name
     ---
     source         : enum ('FromUpstream', 'FromImport')
@@ -58,28 +59,75 @@ class DLCModelSource(dj.Manual):
         definition = """
         -> DLCModelSource
         -> DLCModelInput
+        ---
+        project_path : varchar(255)
         """
 
     class FromUpstream(dj.Part):
         definition = """
         -> DLCModelSource
         -> DLCModelTraining
+        ---
+        project_path : varchar(255)
         """
 
     @classmethod
-    @accepts(None, ("FromUpstream", "FromImport"))
-    def insert_entry(cls, key, source: str = "FromUpstream"):
+    @accepts(None, None, ("FromUpstream", "FromImport"))
+    def insert_entry(
+        cls,
+        dlc_model_name: str,
+        project_name: str,
+        source: str = "FromUpstream",
+        **kwargs,
+    ):
 
-        dlc_model_name = key["dlc_model_name"]
-        cls.insert1({"dlc_model_name": dlc_model_name, "source": source})
+        cls.insert1({"dlc_model_name": dlc_model_name, "source": source}, **kwargs)
         part_table = getattr(cls, source)
-        part_table.insert1(key)
+        table_query = dj.FreeTable(
+            dj.conn(), full_table_name=part_table.parents()[-1]
+        ) & {"project_name": project_name}
+        project_path = table_query.fetch1("project_path")
+        part_table.insert1(
+            {
+                "dlc_model_name": dlc_model_name,
+                "project_name": project_name,
+                "project_path": project_path,
+            },
+            **kwargs,
+        )
+
+
+@schema
+class DLCModelParams(dj.Manual):
+    definition = """
+    dlc_model_params_name: varchar(40)
+    ---
+    params: longblob
+    """
+
+    def insert_default(self, **kwargs):
+        params = {
+            "params": {},
+            "shuffle": 1,
+            "trainingsetindex": 0,
+            "model_prefix": "",
+        }
+        self.insert1({"dlc_model_params_name": "default", "params": params}, **kwargs)
+
+
+@schema
+class DLCModelSelection(dj.Manual):
+    definition = """
+    -> DLCModelSource
+    -> DLCModelParams
+    ---
+    """
 
 
 @schema
 class DLCModel(dj.Computed):
     definition = """
-    -> DLCModelSource
+    -> DLCModelSelection
     ---
     task                 : varchar(32)  # Task in the config yaml
     date                 : varchar(16)  # Date in the config yaml
@@ -103,69 +151,41 @@ class DLCModel(dj.Computed):
         """
 
     def make(self, key):
-        table_source = DLCModelSource & key().fetch("source")
-        source_table = getattr(DLCModelSource, table_source)
 
-        self.insert1(key)
-        return None
-
-    @classmethod
-    def insert_model(cls, key):
-        pass
-
-    @classmethod
-    def insert_new_model(
-        cls,
-        model_name: str,
-        dlc_config,
-        *,
-        shuffle: int,
-        trainingsetindex,
-        project_path=None,
-        model_description="",
-        model_prefix="",
-        paramset_name: str = None,
-        prompt=True,
-        params=None,
-    ):
-        """Insert new model into the dlc.Model table.
-
-        Parameters
-        ----------
-        model_name (str): User-friendly name for this model.
-        dlc_config (str or dict):  path to a config.y*ml, or dict of such contents.
-        shuffle (int): Shuffled or not as 1 or 0.
-        trainingsetindex (int): Index of training fraction list in config.yaml.
-        model_description (str): Optional. Description of this model.
-        model_prefix (str): Optional. Filename prefix used across DLC project
-        body_part_descriptions (list): Optional. List of descriptions for BodyParts.
-        paramset_idx (int): Optional. Index from the TrainingParamSet table
-        prompt (bool): Optional.
-        params (dict): Optional. If dlc_config is path, dict of override items
-        """
         from deeplabcut.utils.auxiliaryfunctions import GetScorerName
-        import dlc_reader
 
-        # handle dlc_config being a yaml file
-        if not isinstance(dlc_config, dict):
-            dlc_config_fp = find_full_path(get_dlc_root_data_dir(), Path(dlc_config))
-            assert dlc_config_fp.exists(), (
-                "dlc_config is neither dict nor filepath" + f"\n Check: {dlc_config_fp}"
-            )
-            if dlc_config_fp.suffix in (".yml", ".yaml"):
-                with open(dlc_config_fp, "rb") as f:
-                    dlc_config = yaml.safe_load(f)
-            if isinstance(params, dict):
-                dlc_config.update(params)
+        model_name, table_source = (DLCModelSource & key).fetch1().values()
+        SourceTable = getattr(DLCModelSource, table_source)
+        params = (DLCModelParams & key).fetch1("params")
+        project_path = SourceTable.fetch1("project_path")
+        if not isinstance(project_path, PosixPath):
+            project_path = Path(project_path)
+        config_query = PurePath(project_path, Path("*config.y*ml"))
+        available_config = glob.glob(config_query.as_posix())
+        dj_config = [path for path in available_config if "dj_dlc" in path]
+        if len(dj_config) > 0:
+            config_path = Path(dj_config[0])
+        elif len(available_config) == 1:
+            config_path = Path(available_config[0])
+        else:
+            config_path = PurePath(project_path, Path("config.yaml"))
+        if not config_path.exists():
+            raise OSError(f"config_path {config_path} does not exist.")
+        if config_path.suffix in (".yml", ".yaml"):
+            with open(config_path, "rb") as f:
+                dlc_config = yaml.safe_load(f)
+            if isinstance(params["params"], dict):
+                dlc_config.update(params["params"])
+                del params["params"]
+        # TODO: clean-up. this feels sloppy
+        shuffle = params.pop("shuffle", 1)
+        trainingsetindex = params.pop("trainingsetindex", None)
+        if not isinstance(trainingsetindex, int):
+            raise KeyError("no trainingsetindex specified in key")
+        model_prefix = params.pop("model_prefix", "")
+        model_description = params.pop("model_description", model_name)
+        paramset_name = params.pop("dlc_training_params_name", None)
 
-        # ---- Get and resolve project path ----
-        project_path = find_full_path(
-            get_dlc_root_data_dir(), dlc_config.get("project_path", project_path)
-        )
-        dlc_config["project_path"] = str(project_path)  # update if different
-        root_dir = find_root_directory(get_dlc_root_data_dir(), project_path)
-
-        # ---- Verify config ----
         needed_attributes = [
             "Task",
             "date",
@@ -176,8 +196,6 @@ class DLCModel(dj.Computed):
         for attribute in needed_attributes:
             assert attribute in dlc_config, f"Couldn't find {attribute} in config"
 
-        # ---- Get scorer name ----
-        # "or 'f'" below covers case where config returns None. str_to_bool handles else
         scorer_legacy = str_to_bool(dlc_config.get("scorer_legacy", "f"))
 
         dlc_scorer = GetScorerName(
@@ -191,7 +209,7 @@ class DLCModel(dj.Computed):
 
         # ---- Insert ----
         model_dict = {
-            "model_name": model_name,
+            "dlc_model_name": model_name,
             "model_description": model_description,
             "scorer": dlc_scorer,
             "task": dlc_config["Task"],
@@ -200,37 +218,20 @@ class DLCModel(dj.Computed):
             "snapshotindex": dlc_config["snapshotindex"],
             "shuffle": shuffle,
             "trainingsetindex": int(trainingsetindex),
-            # TODO: replace project_path
-            "project_path": project_path.relative_to(root_dir).as_posix(),
-            "paramset_name": paramset_name,
+            "project_path": project_path,
             "config_template": dlc_config,
         }
+        key.update(model_dict)
 
-        # -- prompt for confirmation --
-        if prompt:
-            print("--- DLC Model specification to be inserted ---")
-            for k, v in model_dict.items():
-                if k != "config_template":
-                    print("\t{}: {}".format(k, v))
-                else:
-                    print("\t-- Template/Contents of config.yaml --")
-                    for k, v in model_dict["config_template"].items():
-                        print("\t\t{}: {}".format(k, v))
-
-        if (
-            prompt
-            and dj.utils.user_choice("Proceed with new DLC model insert?") != "yes"
-        ):
-            print("Canceled insert.")
-            return
         # ---- Save DJ-managed config ----
         _ = dlc_reader.save_yaml(project_path, dlc_config)
+
         # ____ Insert into table ----
-        cls.insert1(model_dict)
-        # Returns array, so check size for unambiguous truth value
-        if BodyPart.extract_new_body_parts(dlc_config, verbose=False).size > 0:
-            BodyPart.insert_from_config(dlc_config, prompt=prompt)
-        cls.BodyPart.insert((model_name, bp) for bp in dlc_config["bodyparts"])
+        self.insert1(key)
+        self.BodyPart.insert(
+            (model_name, key["dlc_model_params_name"], bp)
+            for bp in dlc_config["bodyparts"]
+        )
 
 
 @schema
@@ -249,7 +250,6 @@ class DLCModelEvaluation(dj.Computed):
     def make(self, key):
         """.populate() method will launch evaulation for each unique entry in Model."""
         import csv
-        from dlc_reader import dlc_reader
         from deeplabcut import evaluate_network
         from deeplabcut.utils.auxiliaryfunctions import get_evaluation_folder
 
@@ -263,7 +263,6 @@ class DLCModelEvaluation(dj.Computed):
             "trainingsetindex",
         )
 
-        project_path = find_full_path(get_dlc_root_data_dir(), project_path)
         yml_path, _ = dlc_reader.read_yaml(project_path)
 
         evaluate_network(

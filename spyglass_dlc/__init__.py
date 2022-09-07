@@ -7,6 +7,8 @@ from .dgramling_dlc_training import (
 from .dgramling_dlc_model import (
     DLCModelSource,
     DLCModelInput,
+    DLCModelParams,
+    DLCModelSelection,
     DLCModel,
     DLCModelEvaluation,
 )
@@ -30,3 +32,19 @@ from .dlc_utils import (
     find_root_directory,
     _convert_mp4,
 )
+
+
+def schemas():
+    return _schemas
+
+
+_schemas = [
+    "dgramling_dlc_project",
+    "dgramling_dlc_training",
+    "dgramling_dlc_model",
+    "dgramling_dlc_pose_estimation",
+    "dgramling_dlc_position",
+    "dgramling_dlc_cohort",
+    "dgramling_dlc_centroid",
+    "dgramling_dlc_orient",
+]
