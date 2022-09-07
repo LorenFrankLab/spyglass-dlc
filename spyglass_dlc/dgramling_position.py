@@ -5,6 +5,9 @@ import pynwb
 import pynwb.behavior
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
+from spyglass.common.common_interval import IntervalList
+from .dgramling_dlc_selection import DLCPos
+from .dgramling_trodes_position import TrodesPos
 
 schema = dj.schema("dgramling_position")
 
@@ -13,6 +16,7 @@ schema = dj.schema("dgramling_position")
 class PosSelect(dj.Manual):
     """ """
 
+    # TODO: I think the IntervalList dependency should be replaced by a table further downstream
     definition = """
     -> IntervalList
     ---

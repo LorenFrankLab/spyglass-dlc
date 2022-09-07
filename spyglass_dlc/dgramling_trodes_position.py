@@ -27,8 +27,6 @@ class TrodesPosParams(dj.Manual):
     Parameters for calculating the position (centroid, velocity, orientation)
     """
 
-    # TODO: whether to keep all params in a params dict
-    # or break out into individual secondary keys
     definition = """
     trodes_pos_params_name: varchar(80) # name for this set of parameters
     ---
@@ -78,9 +76,9 @@ class TrodesPos(dj.Computed):
     -> TrodesPosSelection
     ---
     -> AnalysisNwbfile
-    trodes_centroid_object_id : varchar(80)
-    trodes_orientation_object_id : varchar(80)
-    trodes_velocity_object_id : varchar(80)
+    centroid_object_id : varchar(80)
+    orientation_object_id : varchar(80)
+    velocity_object_id : varchar(80)
     """
 
     def make(self, key):

@@ -137,10 +137,8 @@ def _convert_mp4(
     dest_filename = os.path.splitext(filename)[0]
     if ".1" in dest_filename:
         dest_filename = os.path.splitext(dest_filename)[0]
-    dest_path = pathlib.Path(dest_path + dest_filename + "." + videotype)
-    convert_command = (
-        f"ffmpeg -vsync passthrough -i {video_path} -codec copy {dest_path}"
-    )
+    dest_path = pathlib.Path(f"{dest_path}/{dest_filename}.{videotype}")
+    convert_command = f"ffmpeg -vsync passthrough -i {video_path.as_posix()} -codec copy {dest_path.as_posix()}"
     os.system(convert_command)
     print(f"finished converting {filename}")
     print(
@@ -159,7 +157,7 @@ def _convert_mp4(
             "stream=nb_read_packets",
             "-of",
             "csv=p=0",
-            file,
+            file.as_posix(),
         ]
         frames_command = [
             "ffprobe",
@@ -172,7 +170,7 @@ def _convert_mp4(
             "stream=nb_read_frames",
             "-of",
             "csv=p=0",
-            file,
+            file.as_posix(),
         ]
         if count_frames:
             p = subprocess.Popen(

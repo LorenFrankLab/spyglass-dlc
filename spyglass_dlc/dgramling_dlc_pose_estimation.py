@@ -71,18 +71,8 @@ class DLCPoseEstimationSelection(dj.Manual):
         video_filename : str
             filename of the video
         """
-        # TODO: add check to make sure interval_list_name refers to a single epoch
-        # Or make key include epoch in and of itself instead of interval_list_name
-        epoch = (
-            int(
-                key["interval_list_name"]
-                .replace("pos ", "")
-                .replace(" valid times", "")
-            )
-            + 1
-        )
         video_info = (
-            VideoFile() & {"nwb_file_name": key["nwb_file_name"], "epoch": epoch}
+            VideoFile() & {"nwb_file_name": key["nwb_file_name"], "epoch": key["epoch"]}
         ).fetch1()
         io = pynwb.NWBHDF5IO("/stelmo/nwb/raw/" + video_info["nwb_file_name"], "r")
         nwb_file = io.read()
@@ -90,13 +80,15 @@ class DLCPoseEstimationSelection(dj.Manual):
         video_filepath = nwb_video.external_file[0]
         video_dir = os.path.dirname(video_filepath) + "/"
         video_filename = video_filepath.split(video_dir)[-1]
-        return video_filepath, video_filename
+        return video_dir, video_filename
 
     # TODO: this shouldn't be a classmethod...
     @classmethod
     def check_videofile(cls, video_path, video_filename, output_path: bool = None):
-        if "mp4" in video_filename:
-            return video_path
+        video_filepath = Path(f"{video_path}{video_filename}")
+        if video_filepath.exists():
+            if "mp4" in video_filepath.as_posix():
+                return video_filepath.as_posix()
         from .dlc_utils import _convert_mp4
 
         output_filename = _convert_mp4(
@@ -127,7 +119,8 @@ class DLCPoseEstimationSelection(dj.Manual):
         # TODO: figure out if a separate video_key is needed without portions of key that refer to model
         video_path, video_filename = cls.get_video_path(key)
         output_dir = cls.infer_output_dir(key, video_filename=video_filename)
-        video_path = cls.check_videofile(video_path, video_filename, output_dir)
+        video_dir = os.path.dirname(video_path) + "/"
+        video_path = cls.check_videofile(video_dir, video_filename, output_dir)
         cls.insert1(
             {
                 **key,
@@ -167,7 +160,7 @@ class DLCPoseEstimation(dj.Computed):
 
     def make(self, key):
         """.populate() method will launch training for each PoseEstimationTask"""
-        import dlc_reader
+        from . import dlc_reader
 
         # ID model and directories
         dlc_model = (DLCModel & key).fetch1()
@@ -181,7 +174,6 @@ class DLCPoseEstimation(dj.Computed):
             "pose_estimation_output_dir",
         )
         analyze_video_params = analyze_video_params or {}
-        output_dir = key["output_dir"]
 
         project_path = dlc_model["project_path"]
 

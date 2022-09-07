@@ -6,6 +6,7 @@ import pynwb.behavior
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from spyglass.common.common_behav import RawPosition
+from spyglass.common.common_interval import IntervalList
 from .dgramling_dlc_centroid import DLCCentroid
 from .dgramling_dlc_orient import DLCOrientation
 
@@ -13,14 +14,10 @@ schema = dj.schema("dgramling_dlc_selection")
 
 
 @schema
-class DLCPosSelect(dj.Manual):
+class DLCPosSelection(dj.Manual):
     definition = """
-    -> IntervalList
-    dlc_position_selection_name: varchar(50)
-    ---
-    -> DLCCentroid
-    -> DLCOrientation
-    dlc_si_cohort_selection_names : blob    # List of Smooth interp cohorts used for centroid/orientation calculation
+    -> DLCCentroid.proj(dlc_si_cohort_centroid='dlc_si_cohort_selection_name')
+    -> DLCOrientation.proj(dlc_si_cohort_orientation='dlc_si_cohort_selection_name')
     """
 
 
@@ -33,7 +30,7 @@ but may be difficult to resolve primary keys if cohorts different
 @schema
 class DLCPos(dj.Computed):
     definition = """
-    -> DLCPosSelect
+    -> DLCPosSelection
     ---
     -> AnalysisNwbfile
     position_object_id      : varchar(80)

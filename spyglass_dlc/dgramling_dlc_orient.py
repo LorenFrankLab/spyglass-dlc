@@ -1,10 +1,6 @@
 import numpy as np
 import pandas as pd
 import datajoint as dj
-import pynwb
-import os
-import sys
-import bottleneck as bn
 from typing import List, Dict, OrderedDict
 from pathlib import Path
 from position_tools.core import gaussian_smooth
@@ -81,7 +77,7 @@ class DLCOrientation(dj.Computed):
         )
         dt = np.median(np.diff(pos_df["time"]))
         sampling_rate = 1 / dt
-        orient_func = _key_to_func_dict(params["orient_method"])
+        orient_func = _key_to_func_dict[params["orient_method"]]
         orientation = orient_func(pos_df, **params)
         # Smooth orientation
         is_nan = np.isnan(orientation)
