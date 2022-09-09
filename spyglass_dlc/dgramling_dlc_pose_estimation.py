@@ -205,6 +205,7 @@ class DLCPoseEstimation(dj.Computed):
                     }
                 )
         for body_part, part_df in body_parts_df.items():
+            key["bodypart"] = body_part
             key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
             nwb_analysis_file = AnalysisNwbfile()
             key["dlc_pose_estimation_object_id"] = nwb_analysis_file.add_nwb_object(
@@ -228,45 +229,3 @@ class DLCPoseEstimation(dj.Computed):
             },
             axis=1,
         )
-
-    # @classmethod
-    # def get_trajectory(cls, key, body_parts="all"):
-    #     """Returns a pandas dataframe of coordinates of the specified body_part(s)
-
-    #     Parameters
-    #     ----------
-    #     key: A DataJoint query specifying one PoseEstimation entry. body_parts:
-    #     Optional. Body parts as a list. If "all", all joints
-
-    #     Returns
-    #     -------
-    #     df: multi index pandas dataframe with DLC scorer names, body_parts
-    #         and x/y coordinates of each joint name for a camera_id, similar to output of
-    #         DLC dataframe. If 2D, z is set of zeros
-    #     """
-    #     import pandas as pd
-
-    #     model_name = key["model_name"]
-
-    #     if body_parts == "all":
-    #         body_parts = (cls.BodyPart & key).fetch("body_part")
-    #     else:
-    #         body_parts = list(body_parts)
-
-    #     df = None
-    #     for body_part in body_parts:
-    #         x_pos, y_pos, z_pos, likelihood = (
-    #             cls.BodyPart & {"body_part": body_part}
-    #         ).fetch1("x_pos", "y_pos", "z_pos", "likelihood")
-    #         if not z_pos:
-    #             z_pos = np.zeros_like(x_pos)
-
-    #         a = np.vstack((x_pos, y_pos, z_pos, likelihood))
-    #         a = a.T
-    #         pdindex = pd.MultiIndex.from_product(
-    #             [[model_name], [body_part], ["x", "y", "z", "likelihood"]],
-    #             names=["scorer", "bodyparts", "coords"],
-    #         )
-    #         frame = pd.DataFrame(a, columns=pdindex, index=range(0, a.shape[0]))
-    #         df = pd.concat([df, frame], axis=1)
-    #     return df
