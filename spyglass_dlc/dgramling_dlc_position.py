@@ -20,7 +20,25 @@ schema = dj.schema("dgramling_dlc_position")
 
 @schema
 class DLCSmoothInterpParams(dj.Manual):
-    """Parameters for extracting the smoothed head position."""
+    """
+     Parameters for extracting the smoothed head position.
+
+    Parameters
+    ----------
+    smoothing_params : dict
+        smoothing_duration : float, default 0.05
+            number of frames to smooth over: sampling_rate*smoothing_duration = num_frames
+    interp_params : dict
+        likelihood_thresh : float, default 0.95
+            likelihood below which to NaN and interpolate over
+    sampling_rate : int
+        sampling rate of the recording
+    max_plausible_speed : float, default 300.0
+        fastest possible speed (m/s) bodypart could move,
+        above which is NaN
+    speed_smoothing_std_dev : float, default 0.1
+        standard deviation of gaussian kernel to smooth speed
+    """
 
     definition = """
     dlc_si_params_name : varchar(80) # name for this set of parameters
@@ -130,6 +148,7 @@ class DLCSmoothInterp(dj.Computed):
             **params["smoothing_params"],
         )
         final_df = smooth_df.drop(["likelihood"], axis=1)
+        final_df = final_df.rename_axis("time").reset_index()
         key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
         # Add dataframe to AnalysisNwbfile
         nwb_analysis_file = AnalysisNwbfile()
