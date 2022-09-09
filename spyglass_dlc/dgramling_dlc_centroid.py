@@ -210,7 +210,7 @@ class DLCCentroid(dj.Computed):
         centroid = centroid_func(pos_df, **params["points"])
         velocity = get_velocity(
             centroid,
-            time=pos_df["time"],
+            time=pos_df.index.to_numpy(),
             sigma=speed_smoothing_std_dev,
             sampling_frequency=sampling_rate,
         )  # cm/s
@@ -219,10 +219,10 @@ class DLCCentroid(dj.Computed):
         velocity_df = pd.DataFrame(
             np.concatenate((velocity, speed[:, np.newaxis]), axis=1),
             columns=["velocity_x", "velocity_y", "speed"],
-            index=pos_df["time"],
+            index=pos_df.index.to_numpy(),
         )
         final_df = pd.DataFrame(
-            centroid, columns=["position_x", "position_y"], index=pos_df["time"]
+            centroid, columns=["position_x", "position_y"], index=pos_df.index.to_numpy()
         )
         # Add to Analysis NWB file
         nwb_analysis_file = AnalysisNwbfile()

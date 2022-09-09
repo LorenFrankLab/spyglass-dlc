@@ -75,7 +75,7 @@ class DLCOrientation(dj.Computed):
         orientation_smoothing_std_dev = params.pop(
             "orientation_smoothing_std_dev", None
         )
-        dt = np.median(np.diff(pos_df["time"]))
+        dt = np.median(np.diff(pos_df.index.to_numpy()))
         sampling_rate = 1 / dt
         orient_func = _key_to_func_dict[params["orient_method"]]
         orientation = orient_func(pos_df, **params)

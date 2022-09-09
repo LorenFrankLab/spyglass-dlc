@@ -51,7 +51,7 @@ class DLCPos(dj.Computed):
         idx = pd.IndexSlice
         position.create_spatial_series(
             name="position",
-            timestamps=final_df["time"],
+            timestamps=final_df.index.to_numpy(),
             conversion=METERS_PER_CM,
             data=final_df.loc[:, idx[("position_x", "position_y")]],
             reference_frame=spatial_series.reference_frame,
@@ -61,7 +61,7 @@ class DLCPos(dj.Computed):
 
         orientation.create_spatial_series(
             name="orientation",
-            timestamps=final_df["time"],
+            timestamps=final_df.index.to_numpy(),
             conversion=1.0,
             data=final_df.loc[:, idx[("orientation")]],
             reference_frame=spatial_series.reference_frame,
@@ -71,7 +71,7 @@ class DLCPos(dj.Computed):
 
         velocity.create_timeseries(
             name="velocity",
-            timestamps=final_df["time"],
+            timestamps=final_df.index.to_numpy(),
             conversion=METERS_PER_CM,
             unit="m/s",
             data=final_df.loc[:, idx[("velocity_x", "velocity_y", "speed")]],
