@@ -1,3 +1,4 @@
+import getpass
 from pathlib import Path
 import inspect
 import os
@@ -103,7 +104,12 @@ class DLCModelTraining(dj.Computed):
         )
         from deeplabcut import train_network
         import dlc_reader
-        from deeplabcut.utils.auxiliaryfunctions import read_config
+        from deeplabcut.utils.auxiliaryfunctions import (
+            read_config,
+            get_deeplabcut_path,
+            edit_config,
+        )
+        from deeplabcut.utils import auxfun_models
 
         try:
             from deeplabcut.utils.auxiliaryfunctions import get_model_folder
@@ -141,7 +147,33 @@ class DLCModelTraining(dj.Computed):
         }
         for k in ["shuffle", "trainingsetindex", "maxiters"]:
             train_network_kwargs[k] = int(train_network_kwargs[k])
-
+        # TODO: THIS PART IS A LITTLE SKETCH and edits something that maybe shouldn't be changed
+        pose_yaml_path = list(
+            Path(
+                project_path
+                / get_model_folder(
+                    trainFraction=dlc_config["train_fraction"],
+                    shuffle=dlc_config["shuffle"],
+                    cfg=dlc_config,
+                    modelprefix=dlc_config["modelprefix"],
+                )
+                / "train"
+            ).glob("*.y*ml")
+        )
+        assert (
+            len(pose_yaml_path) == 1
+        ), f"Found more yaml files than expected: {len(pose_yaml_path)}"
+        pose_yaml_path = pose_yaml_path[0]
+        if pose_yaml_path.exists():
+            username = getpass.getuser()
+            pose_config = read_config(pose_yaml_path)
+            if username not in pose_config["init_weights"]:
+                model_path, _ = auxfun_models.Check4weights(
+                    pose_config["net_type"],
+                    Path(get_deeplabcut_path()),
+                    dlc_config["shuffle"],
+                )
+                edit_config(pose_yaml_path, {"init_weights": model_path})
         try:
             train_network(dlc_cfg_filepath, **train_network_kwargs)
         except KeyboardInterrupt:  # Instructions indicate to train until interrupt
