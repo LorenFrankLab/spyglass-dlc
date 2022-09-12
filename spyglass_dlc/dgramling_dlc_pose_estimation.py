@@ -1,20 +1,13 @@
-import numpy as np
+from pathlib import Path
+import os
+from datetime import datetime
 import pandas as pd
 import datajoint as dj
-from datetime import datetime
-import pynwb
-import os
-import sys
-import glob
-import ruamel.yaml as yaml
-from typing import List, Dict, OrderedDict
-from pathlib import Path
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_behav import VideoFile
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from .dgramling_dlc_project import BodyPart
 from .dgramling_dlc_model import DLCModel
-from .dlc_utils import find_full_path
 
 schema = dj.schema("dgramling_dlc_pose_estimation")
 
@@ -31,8 +24,8 @@ class DLCPoseEstimationSelection(dj.Manual):
     pose_estimation_params=null  : longblob     # analyze_videos params, if not default
     """
 
-    # I think it makes more sense to just use a set output directory of 'cumulus/deeplabcut/pose_estimation/'
-    # or a directory like that... or maybe on stelmo? depends on what Loren/Eric think
+    # I think it makes more sense to just use a set output directory of 'nimbus/deeplabcut/output/'
+    # Could also make it a subfolder of the project if that seems simpler...
     @classmethod
     def infer_output_dir(cls, key, video_filename: str):
         """Return the expected pose_estimation_output_dir.
@@ -55,48 +48,6 @@ class DLCPoseEstimationSelection(dj.Manual):
         return output_dir
 
     @classmethod
-    def get_video_path(cls, key):
-        """
-        Given nwb_file_name and interval_list_name returns specified
-        video file filename and path
-
-        Parameters
-        ----------
-        key : dict
-            Dictionary containing nwb_file_name and interval_list_name as keys
-        Returns
-        -------
-        video_filepath : str
-            path to the video file, including video filename
-        video_filename : str
-            filename of the video
-        """
-        video_info = (
-            VideoFile() & {"nwb_file_name": key["nwb_file_name"], "epoch": key["epoch"]}
-        ).fetch1()
-        io = pynwb.NWBHDF5IO("/stelmo/nwb/raw/" + video_info["nwb_file_name"], "r")
-        nwb_file = io.read()
-        nwb_video = nwb_file.objects[video_info["video_file_object_id"]]
-        video_filepath = nwb_video.external_file[0]
-        video_dir = os.path.dirname(video_filepath) + "/"
-        video_filename = video_filepath.split(video_dir)[-1]
-        return video_dir, video_filename
-
-    # TODO: this shouldn't be a classmethod...
-    @classmethod
-    def check_videofile(cls, video_path, video_filename, output_path: bool = None):
-        video_filepath = Path(f"{video_path}{video_filename}")
-        if video_filepath.exists():
-            if "mp4" in video_filepath.as_posix():
-                return video_filepath.as_posix()
-        from .dlc_utils import _convert_mp4
-
-        output_filename = _convert_mp4(
-            video_filename, video_path, output_path, videotype="mp4"
-        )
-        return output_filename
-
-    @classmethod
     def insert_estimation_task(
         cls,
         key,
@@ -117,10 +68,12 @@ class DLCPoseEstimationSelection(dj.Manual):
             dynamic, robust_nframes, allow_growth, use_shelve
         """
         # TODO: figure out if a separate video_key is needed without portions of key that refer to model
-        video_path, video_filename = cls.get_video_path(key)
+        from .dlc_utils import get_video_path, check_videofile
+
+        video_path, video_filename = get_video_path(key)
         output_dir = cls.infer_output_dir(key, video_filename=video_filename)
         video_dir = os.path.dirname(video_path) + "/"
-        video_path = cls.check_videofile(video_dir, video_filename, output_dir)
+        video_path = check_videofile(video_dir, video_filename, output_dir)[0]
         cls.insert1(
             {
                 **key,
