@@ -4,7 +4,7 @@ import os
 import glob
 import ruamel.yaml
 from itertools import combinations
-from typing import List, Dict, OrderedDict
+from typing import List
 from pathlib import Path
 from spyglass.common.common_lab import LabTeam
 from .dlc_utils import _convert_mp4
@@ -168,15 +168,12 @@ class DLCProject(dj.Manual):
             (Default is None) list of video names to extract frames from
             If not None, will limit videos within video_path to use
         """
-
         skeleton_node = None
+        # TODO: this needs to be cleaned up
         if convert_video:
-            raise NotImplementedError(f"argument `convert_video` has yet to be tested")
-            videos_to_convert = glob.glob(video_path + "*.h264")
-            (
-                _convert_mp4(video, video_path, video_path, "mp4")
-                for video in videos_to_convert
-            )
+            from .dlc_utils import check_videofile
+
+            check_videofile(video_path=video_path, output_path=video_path)
         videos = glob.glob(video_path + "*.mp4")
         if len(videos) < 1:
             raise ValueError(f"no .mp4 videos found in{video_path}")
@@ -197,12 +194,11 @@ class DLCProject(dj.Manual):
         for bodypart in bodyparts:
             if not bool(BodyPart() & {"bodypart": bodypart}):
                 raise ValueError(f"bodypart: {bodypart} not found in BodyPart table")
+        config_kwargs = {"numframes2pick": frames_per_video, "dotsize": 3}.update(
+            kwargs
+        )
         add_to_config(
-            config_path,
-            bodyparts,
-            skeleton_node=skeleton_node,
-            numframes2pick=frames_per_video,
-            dotsize=3,
+            config_path, bodyparts, skeleton_node=skeleton_node, **config_kwargs
         )
         key = {
             "project_name": project_name,
