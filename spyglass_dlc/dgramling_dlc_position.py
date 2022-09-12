@@ -1,9 +1,8 @@
+from itertools import groupby
+from operator import itemgetter
 import numpy as np
 import pandas as pd
 import datajoint as dj
-from datetime import datetime
-from itertools import groupby
-from operator import itemgetter
 import bottleneck as bn
 from position_tools import (
     get_speed,
@@ -73,8 +72,8 @@ class DLCSmoothInterpParams(dj.Manual):
     def get_default(cls):
         return (cls & {"dlc_si_params_name": "default"}).fetch1("params")
 
-    def delete(self, key, **kwargs):
-        super().delete(key, **kwargs)
+    # def delete(self, key, **kwargs):
+    #     super().delete(key, **kwargs)
 
 
 @schema

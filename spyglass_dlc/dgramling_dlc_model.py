@@ -1,21 +1,12 @@
 from pathlib import Path, PosixPath, PurePath
 import os
-import sys
 import glob
-from typing import List, Dict, OrderedDict
-import numpy as np
-import pandas as pd
 import datajoint as dj
-from datajoint.errors import DataJointError
 import ruamel.yaml as yaml
 from spyglass.common.common_lab import LabTeam
 from .dgramling_dlc_project import BodyPart, DLCProject
 from .dgramling_dlc_training import DLCModelTraining, DLCModelTrainingParams
 from .dlc_decorators import accepts
-from .dlc_utils import (
-    find_full_path,
-    get_dlc_root_data_dir,
-)
 from . import dlc_reader
 
 schema = dj.schema("dgramling_dlc_model")

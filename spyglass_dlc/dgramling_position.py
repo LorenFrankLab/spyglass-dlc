@@ -1,8 +1,6 @@
 import datajoint as dj
 import pandas as pd
 import numpy as np
-import pynwb
-import pynwb.behavior
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from spyglass.common.common_interval import IntervalList

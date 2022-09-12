@@ -1,12 +1,7 @@
-import numpy as np
-import pandas as pd
-import datajoint as dj
+from pathlib import Path
 import inspect
 import os
-import ruamel.yaml as yaml
-from itertools import combinations
-from pathlib import Path
-from .dlc_utils import find_full_path
+import datajoint as dj
 from .dgramling_dlc_project import DLCProject
 
 schema = dj.schema("dgramling_dlc_training")

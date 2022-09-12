@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import datajoint as dj
 import pynwb
-import pynwb.behavior
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from spyglass.common.common_behav import RawPosition
@@ -16,8 +15,8 @@ schema = dj.schema("dgramling_dlc_selection")
 @schema
 class DLCPosSelection(dj.Manual):
     definition = """
-    -> DLCCentroid.proj(dlc_si_cohort_centroid='dlc_si_cohort_selection_name')
-    -> DLCOrientation.proj(dlc_si_cohort_orientation='dlc_si_cohort_selection_name')
+    -> DLCCentroid.proj(dlc_si_cohort_centroid='dlc_si_cohort_selection_name', centroid_analysis_file_name='analysis_file_name')
+    -> DLCOrientation.proj(dlc_si_cohort_orientation='dlc_si_cohort_selection_name', orientation_analysis_file_name='analysis_file_name')
     """
 
 
@@ -39,59 +38,61 @@ class DLCPos(dj.Computed):
     """
 
     def make(self, key):
-        key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
-        centroid_df = (DLCCentroid & key).fetch1_dataframe()
-        orientation_df = (DLCOrientation & key).fetch1_dataframe()
-        spatial_series = (RawPosition & key).fetch_nwb()[0]["raw_position"]
-        final_df = centroid_df.join([orientation_df])
+        position_nwb_data = (DLCCentroid & key).fetch_nwb()[0]
+        orientation_nwb_data = (DLCOrientation & key).fetch_nwb()[0]
+        position_object = position_nwb_data["dlc_position"].spatial_series["position"]
+        velocity_object = position_nwb_data["dlc_velocity"].time_series["velocity"]
+        orientation_object = orientation_nwb_data["dlc_orientation"].spatial_series[
+            "orientation"
+        ]
         position = pynwb.behavior.Position()
         orientation = pynwb.behavior.CompassDirection()
         velocity = pynwb.behavior.BehavioralTimeSeries()
-        METERS_PER_CM = 0.01
-        idx = pd.IndexSlice
         position.create_spatial_series(
-            name="position",
-            timestamps=final_df.index.to_numpy(),
-            conversion=METERS_PER_CM,
-            data=final_df.loc[:, idx[("position_x", "position_y")]],
-            reference_frame=spatial_series.reference_frame,
-            comments=spatial_series.comments,
-            description="x_position, y_position",
+            name=position_object.name,
+            timestamps=np.asarray(position_object.timestamps),
+            conversion=position_object.conversion,
+            data=np.asarray(position_object.data),
+            reference_frame=position_object.reference_frame,
+            comments=position_object.comments,
+            description=position_object.description,
         )
-
         orientation.create_spatial_series(
-            name="orientation",
-            timestamps=final_df.index.to_numpy(),
-            conversion=1.0,
-            data=final_df.loc[:, idx[("orientation")]],
-            reference_frame=spatial_series.reference_frame,
-            comments=spatial_series.comments,
-            description="orientation",
+            name=orientation_object.name,
+            timestamps=np.asarray(orientation_object.timestamps),
+            conversion=orientation_object.conversion,
+            data=np.asarray(orientation_object.data),
+            reference_frame=orientation_object.reference_frame,
+            comments=orientation_object.comments,
+            description=orientation_object.description,
         )
-
         velocity.create_timeseries(
-            name="velocity",
-            timestamps=final_df.index.to_numpy(),
-            conversion=METERS_PER_CM,
-            unit="m/s",
-            data=final_df.loc[:, idx[("velocity_x", "velocity_y", "speed")]],
-            comments=spatial_series.comments,
-            description="x_velocity, y_velocity, speed",
+            name=velocity_object.name,
+            timestamps=np.asarray(velocity_object.timestamps),
+            conversion=velocity_object.conversion,
+            unit=velocity_object.unit,
+            data=np.asarray(velocity_object.data),
+            comments=velocity_object.comments,
+            description=velocity_object.description,
         )
-
+        # Add to Analysis NWB file
+        key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
         nwb_analysis_file = AnalysisNwbfile()
 
-        key["position_object_id"] = nwb_analysis_file.add_nwb_object(
-            key["analysis_file_name"], position
-        )
         key["orientation_object_id"] = nwb_analysis_file.add_nwb_object(
             key["analysis_file_name"], orientation
+        )
+        key["position_object_id"] = nwb_analysis_file.add_nwb_object(
+            key["analysis_file_name"], position
         )
         key["velocity_object_id"] = nwb_analysis_file.add_nwb_object(
             key["analysis_file_name"], velocity
         )
 
-        AnalysisNwbfile().add(key["nwb_file_name"], key["analysis_file_name"])
+        nwb_analysis_file.add(
+            nwb_file_name=key["nwb_file_name"],
+            analysis_file_name=key["analysis_file_name"],
+        )
 
         self.insert1(key)
 

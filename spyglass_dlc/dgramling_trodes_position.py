@@ -13,7 +13,6 @@ from position_tools import (
     interpolate_nan,
 )
 from position_tools.core import gaussian_smooth
-from tqdm import tqdm_notebook as tqdm
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from spyglass.common.common_behav import RawPosition

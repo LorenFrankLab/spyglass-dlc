@@ -38,6 +38,8 @@ from .dlc_utils import (
     find_full_path,
     find_root_directory,
     _convert_mp4,
+    check_videofile,
+    get_video_path,
 )
 
 
@@ -54,4 +56,7 @@ _schemas = [
     "dgramling_dlc_cohort",
     "dgramling_dlc_centroid",
     "dgramling_dlc_orient",
+    "dgramling_dlc_selection",
+    "dgramling_trodes_position",
+    "dgramling_position",
 ]
