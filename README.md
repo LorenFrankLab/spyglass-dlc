@@ -23,3 +23,15 @@ cd spyglass
 pip install -e .
 cd spyglass-dlc
 pip install -e .
+```
+Add the following environment variables (e.g. in ~/.bashrc). If from the Frank Lab, we assume that you are interacting with the database on a computer that has mounted nimbus at /nimbus (if the mount location is different, change accordingly). For this to take effect, log out and log back in, or run source ~/.bashrc in the terminal.
+```bash
+nano ~/.bashrc
+```
+and add:
+```bash
+export DLC_PROJECT_PATH="/nimbus/deeplabcut/projects"
+export DLC_VIDEO_PATH="/nimbus/deeplabcut/video"
+export DLC_OUTPUT_PATH="/nimbus/deeplabcut/output"
+```
+
