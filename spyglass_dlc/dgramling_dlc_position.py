@@ -79,9 +79,7 @@ class DLCSmoothInterpParams(dj.Manual):
 @schema
 class DLCSmoothInterpSelection(dj.Manual):
     definition = """
-    -> DLCPoseEstimation
-    -> RawPosition
-    -> BodyPart
+    -> DLCPoseEstimation.BodyPart
     -> DLCSmoothInterpParams
     ---
 
@@ -111,10 +109,6 @@ class DLCSmoothInterp(dj.Computed):
         # Get DLC output dataframe
         print("fetching Pose Estimation Dataframe")
         dlc_df = (DLCPoseEstimation.BodyPart() & key).fetch1_dataframe()
-        print("converting to cm")
-        dlc_df = convert_to_cm(dlc_df, key)
-        print("adding timestamps to DataFrame")
-        dlc_df = add_timestamps(dlc_df, key)
         # Calculate speed
         idx = pd.IndexSlice
         print("Calculating speed")
@@ -168,39 +162,6 @@ class DLCSmoothInterp(dj.Computed):
 
     def fetch1_dataframe(self):
         return self.fetch_nwb()[0]["dlc_smooth_interp"].set_index("time")
-
-
-def convert_to_cm(df, key):
-
-    CM_TO_METERS = 100
-    raw_position = (
-        RawPosition()
-        & {
-            "nwb_file_name": key["nwb_file_name"],
-            "interval_list_name": key["interval_list_name"],
-        }
-    ).fetch_nwb()[0]
-    meters_to_pixels = raw_position["raw_position"].conversion
-    idx = pd.IndexSlice
-    df.loc[:, idx[("x", "y")]] *= meters_to_pixels * CM_TO_METERS
-    return df
-
-
-def add_timestamps(df: pd.DataFrame, key) -> pd.DataFrame:
-    interval_list_name = f'pos {key["epoch"] + 1} valid times'
-    raw_pos_df = (
-        RawPosition
-        & {
-            "nwb_file_name": key["nwb_file_name"],
-            "interval_list_name": interval_list_name,
-        }
-    ).fetch1_dataframe()
-    raw_pos_df["time"] = raw_pos_df.index
-    raw_pos_df.set_index("video_frame_ind", inplace=True)
-    df = df.join(raw_pos_df)
-    # Drop indices where time is NaN
-    df = df.dropna(subset=["time"])
-    return df.set_index("time")
 
 
 def interp_pos(dlc_df, **kwargs):

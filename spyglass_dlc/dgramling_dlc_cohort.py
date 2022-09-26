@@ -1,7 +1,7 @@
 import datajoint as dj
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
-from spyglass.common.common_interval import IntervalList
+from .dgramling_dlc_pose_estimation import DLCPoseEstimation
 from .dgramling_dlc_position import DLCSmoothInterp
 from .dgramling_dlc_project import BodyPart
 
@@ -17,13 +17,9 @@ class DLCSmoothInterpCohortSelection(dj.Manual):
 
     # TODO: try to make a strict dependence on DLCSmoothInterpSelection
     definition = """
-    -> IntervalList
     dlc_si_cohort_selection_name : varchar(120)
+    -> DLCPoseEstimation
     ---
-    epoch                   : int           # the session epoch for this task and apparatus(1 based)
-    video_file_num          : int
-    dlc_model_name          : varchar(64)   # User-friendly model name
-    dlc_model_params_name   : varchar(40)   
     dlc_si_params_name      : varchar(80)   # descriptive name of this interval list
     bodyparts               : blob          # List of bodyparts to include in cohort
     """
