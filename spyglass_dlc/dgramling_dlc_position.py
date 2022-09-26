@@ -1,9 +1,8 @@
+from itertools import groupby
+from operator import itemgetter
 import numpy as np
 import pandas as pd
 import datajoint as dj
-from datetime import datetime
-from itertools import groupby
-from operator import itemgetter
 import bottleneck as bn
 from position_tools import (
     get_speed,
@@ -20,7 +19,25 @@ schema = dj.schema("dgramling_dlc_position")
 
 @schema
 class DLCSmoothInterpParams(dj.Manual):
-    """Parameters for extracting the smoothed head position."""
+    """
+     Parameters for extracting the smoothed head position.
+
+    Parameters
+    ----------
+    smoothing_params : dict
+        smoothing_duration : float, default 0.05
+            number of frames to smooth over: sampling_rate*smoothing_duration = num_frames
+    interp_params : dict
+        likelihood_thresh : float, default 0.95
+            likelihood below which to NaN and interpolate over
+    sampling_rate : int
+        sampling rate of the recording
+    max_plausible_speed : float, default 300.0
+        fastest possible speed (m/s) bodypart could move,
+        above which is NaN
+    speed_smoothing_std_dev : float, default 0.1
+        standard deviation of gaussian kernel to smooth speed
+    """
 
     definition = """
     dlc_si_params_name : varchar(80) # name for this set of parameters
@@ -51,13 +68,18 @@ class DLCSmoothInterpParams(dj.Manual):
             skip_duplicates=True,
         )
 
+    @classmethod
+    def get_default(cls):
+        return (cls & {"dlc_si_params_name": "default"}).fetch1("params")
+
+    # def delete(self, key, **kwargs):
+    #     super().delete(key, **kwargs)
+
 
 @schema
 class DLCSmoothInterpSelection(dj.Manual):
     definition = """
-    -> DLCPoseEstimation
-    -> RawPosition
-    -> BodyPart
+    -> DLCPoseEstimation.BodyPart
     -> DLCSmoothInterpParams
     ---
 
@@ -66,6 +88,11 @@ class DLCSmoothInterpSelection(dj.Manual):
 
 @schema
 class DLCSmoothInterp(dj.Computed):
+    """
+    Interpolates across low likelihood periods and smooths the position
+    Can take a few minutes.
+    """
+
     definition = """
     -> DLCSmoothInterpSelection
     ---
@@ -74,21 +101,20 @@ class DLCSmoothInterp(dj.Computed):
     """
 
     def make(self, key):
-        key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
         # Get labels to smooth from Parameters table
-        params = (DLCSmoothInterpParams() & key).fetch1()
-        max_plausible_speed = params["params"].pop("max_plausible_speed")
-        speed_smoothing_std_dev = params["params"].pop("speed_smoothing_std_dev")
-        sampling_rate = params["params"].pop("sampling_rate")
+        params = (DLCSmoothInterpParams() & key).fetch1("params")
+        max_plausible_speed = params.pop("max_plausible_speed")
+        speed_smoothing_std_dev = params.pop("speed_smoothing_std_dev")
+        sampling_rate = params.pop("sampling_rate")
         # Get DLC output dataframe
-        dlc_df = (DLCPoseEstimation.BodyPart() & key).fetch1_dataframe()[0]
-        dlc_df = convert_to_cm(dlc_df, key)
-        dlc_df = add_timestamps(dlc_df, key)
+        print("fetching Pose Estimation Dataframe")
+        dlc_df = (DLCPoseEstimation.BodyPart() & key).fetch1_dataframe()
         # Calculate speed
         idx = pd.IndexSlice
+        print("Calculating speed")
         LED_speed = get_speed(
             dlc_df.loc[:, idx[("x", "y")]],
-            dlc_df["time"],
+            dlc_df.index.to_numpy(),
             sigma=speed_smoothing_std_dev,
             sampling_frequency=sampling_rate,
         )
@@ -96,13 +122,18 @@ class DLCSmoothInterp(dj.Computed):
         is_too_fast = LED_speed > max_plausible_speed
         dlc_df.loc[idx[is_too_fast], idx[("x", "y")]] = np.nan
         # Interpolate the NaN points
-        dlc_df.loc[:, idx[("x", "y")]] = interpolate_nan(dlc_df.loc[:, idx[("x", "y")]])
+        dlc_df.loc[:, idx[("x", "y")]] = interpolate_nan(
+            position=dlc_df.loc[:, idx[("x", "y")]].to_numpy(),
+            time=dlc_df.index.to_numpy(),
+        )
         # get interpolated points
+        print("interpolating across low likelihood times")
         interp_df = interp_pos(dlc_df, **params["interp_params"])
         if "smoothing_duration" in params["smoothing_params"]:
             smoothing_duration = params["smoothing_params"].pop("smoothing_duration")
-        dt = np.median(np.diff(dlc_df["time"]))
+        dt = np.median(np.diff(dlc_df.index.to_numpy()))
         sampling_rate = 1 / dt
+        print("smoothing position")
         smooth_df = smooth_pos(
             interp_df,
             smoothing_duration=smoothing_duration,
@@ -110,7 +141,8 @@ class DLCSmoothInterp(dj.Computed):
             **params["smoothing_params"],
         )
         final_df = smooth_df.drop(["likelihood"], axis=1)
-
+        final_df = final_df.rename_axis("time").reset_index()
+        key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
         # Add dataframe to AnalysisNwbfile
         nwb_analysis_file = AnalysisNwbfile()
         key["dlc_smooth_interp_object_id"] = nwb_analysis_file.add_nwb_object(
@@ -121,6 +153,7 @@ class DLCSmoothInterp(dj.Computed):
             nwb_file_name=key["nwb_file_name"],
             analysis_file_name=key["analysis_file_name"],
         )
+        self.insert1(key)
 
     def fetch_nwb(self, *attrs, **kwargs):
         return fetch_nwb(
@@ -129,39 +162,6 @@ class DLCSmoothInterp(dj.Computed):
 
     def fetch1_dataframe(self):
         return self.fetch_nwb()[0]["dlc_smooth_interp"].set_index("time")
-
-
-def convert_to_cm(df, key):
-
-    CM_TO_METERS = 100
-    raw_position = (
-        RawPosition()
-        & {
-            "nwb_file_name": key["nwb_file_name"],
-            "interval_list_name": key["interval_list_name"],
-        }
-    ).fetch_nwb()[0]
-    meters_to_pixels = raw_position["raw_position"].conversion
-    idx = pd.IndexSlice
-    df.loc[:, idx[("x", "y")]] *= meters_to_pixels * CM_TO_METERS
-    return df
-
-
-def add_timestamps(df: pd.DataFrame, key) -> pd.DataFrame:
-    interval_list_name = f'pos {key["epoch"] + 1} valid times'
-    raw_pos_df = (
-        RawPosition
-        & {
-            "nwb_file_name": key["nwb_file_name"],
-            "interval_list_name": interval_list_name,
-        }
-    ).fetch1_dataframe()
-    raw_pos_df["time"] = raw_pos_df.index
-    raw_pos_df.set_index("video_frame_ind", inplace=True)
-    df = df.join(raw_pos_df)
-    # Drop indices where time is NaN
-    df = df.dropna(subset=["time"])
-    return df.set_index("time")
 
 
 def interp_pos(dlc_df, **kwargs):
@@ -195,20 +195,20 @@ def interp_pos(dlc_df, **kwargs):
                         dlc_df.loc[idx[span_start:span_stop], idx["y"]] = np.nan
                         print(f"ind: {ind} length: {span_len} " f"not interpolated")
                         continue
-        start_time = dlc_df["time"].iloc[span_start]
-        stop_time = dlc_df["time"].iloc[span_stop]
+        start_time = dlc_df.index[span_start]
+        stop_time = dlc_df.index[span_stop]
         xnew = np.interp(
-            x=dlc_df["time"].iloc[span_start : span_stop + 1],
+            x=dlc_df.index[span_start : span_stop + 1],
             xp=[start_time, stop_time],
             fp=[x[0], x[-1]],
         )
         ynew = np.interp(
-            x=dlc_df["time"].iloc[span_start : span_stop + 1],
+            x=dlc_df.index[span_start : span_stop + 1],
             xp=[start_time, stop_time],
             fp=[y[0], y[-1]],
         )
-        dlc_df.loc[idx[span_start:span_stop], idx["x"]] = xnew
-        dlc_df.loc[idx[span_start:span_stop], idx["y"]] = ynew
+        dlc_df.loc[idx[start_time:stop_time], idx["x"]] = xnew
+        dlc_df.loc[idx[start_time:stop_time], idx["y"]] = ynew
     return dlc_df
 
 

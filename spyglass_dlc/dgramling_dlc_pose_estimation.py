@@ -1,20 +1,13 @@
-import numpy as np
+from pathlib import Path
+import os
+from datetime import datetime
 import pandas as pd
 import datajoint as dj
-from datetime import datetime
-import pynwb
-import os
-import sys
-import glob
-import ruamel.yaml as yaml
-from typing import List, Dict, OrderedDict
-from pathlib import Path
 from spyglass.common.dj_helper_fn import fetch_nwb
-from spyglass.common.common_behav import VideoFile
+from spyglass.common.common_behav import VideoFile, RawPosition
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from .dgramling_dlc_project import BodyPart
 from .dgramling_dlc_model import DLCModel
-from .dlc_utils import find_full_path
 
 schema = dj.schema("dgramling_dlc_pose_estimation")
 
@@ -31,8 +24,8 @@ class DLCPoseEstimationSelection(dj.Manual):
     pose_estimation_params=null  : longblob     # analyze_videos params, if not default
     """
 
-    # I think it makes more sense to just use a set output directory of 'cumulus/deeplabcut/pose_estimation/'
-    # or a directory like that... or maybe on stelmo? depends on what Loren/Eric think
+    # I think it makes more sense to just use a set output directory of 'nimbus/deeplabcut/output/'
+    # Could also make it a subfolder of the project if that seems simpler...
     @classmethod
     def infer_output_dir(cls, key, video_filename: str):
         """Return the expected pose_estimation_output_dir.
@@ -55,56 +48,6 @@ class DLCPoseEstimationSelection(dj.Manual):
         return output_dir
 
     @classmethod
-    def get_video_path(cls, key):
-        """
-        Given nwb_file_name and interval_list_name returns specified
-        video file filename and path
-
-        Parameters
-        ----------
-        key : dict
-            Dictionary containing nwb_file_name and interval_list_name as keys
-        Returns
-        -------
-        video_filepath : str
-            path to the video file, including video filename
-        video_filename : str
-            filename of the video
-        """
-        # TODO: add check to make sure interval_list_name refers to a single epoch
-        # Or make key include epoch in and of itself instead of interval_list_name
-        epoch = (
-            int(
-                key["interval_list_name"]
-                .replace("pos ", "")
-                .replace(" valid times", "")
-            )
-            + 1
-        )
-        video_info = (
-            VideoFile() & {"nwb_file_name": key["nwb_file_name"], "epoch": epoch}
-        ).fetch1()
-        io = pynwb.NWBHDF5IO("/stelmo/nwb/raw/" + video_info["nwb_file_name"], "r")
-        nwb_file = io.read()
-        nwb_video = nwb_file.objects[video_info["video_file_object_id"]]
-        video_filepath = nwb_video.external_file[0]
-        video_dir = os.path.dirname(video_filepath) + "/"
-        video_filename = video_filepath.split(video_dir)[-1]
-        return video_filepath, video_filename
-
-    # TODO: this shouldn't be a classmethod...
-    @classmethod
-    def check_videofile(cls, video_path, video_filename, output_path: bool = None):
-        if "mp4" in video_filename:
-            return video_path
-        from .dlc_utils import _convert_mp4
-
-        output_filename = _convert_mp4(
-            video_filename, video_path, output_path, videotype="mp4"
-        )
-        return output_filename
-
-    @classmethod
     def insert_estimation_task(
         cls,
         key,
@@ -125,9 +68,12 @@ class DLCPoseEstimationSelection(dj.Manual):
             dynamic, robust_nframes, allow_growth, use_shelve
         """
         # TODO: figure out if a separate video_key is needed without portions of key that refer to model
-        video_path, video_filename = cls.get_video_path(key)
+        from .dlc_utils import get_video_path, check_videofile
+
+        video_path, video_filename = get_video_path(key)
         output_dir = cls.infer_output_dir(key, video_filename=video_filename)
-        video_path = cls.check_videofile(video_path, video_filename, output_dir)
+        video_dir = os.path.dirname(video_path) + "/"
+        video_path = check_videofile(video_dir, output_dir, video_filename)[0]
         cls.insert1(
             {
                 **key,
@@ -146,6 +92,7 @@ class DLCPoseEstimation(dj.Computed):
     -> DLCPoseEstimationSelection
     ---
     pose_estimation_time: datetime  # time of generation of this set of DLC results
+    meters_per_pixel : double       # conversion of meters per pixel for analyzed video
     """
 
     class BodyPart(dj.Part):
@@ -163,11 +110,11 @@ class DLCPoseEstimation(dj.Computed):
             )
 
         def fetch1_dataframe(self):
-            return self.fetch_nwb()[0]["dlc_pose_estimation"]
+            return self.fetch_nwb()[0]["dlc_pose_estimation"].set_index("time")
 
     def make(self, key):
         """.populate() method will launch training for each PoseEstimationTask"""
-        import dlc_reader
+        from . import dlc_reader
 
         # ID model and directories
         dlc_model = (DLCModel & key).fetch1()
@@ -181,7 +128,6 @@ class DLCPoseEstimation(dj.Computed):
             "pose_estimation_output_dir",
         )
         analyze_video_params = analyze_video_params or {}
-        output_dir = key["output_dir"]
 
         project_path = dlc_model["project_path"]
 
@@ -199,8 +145,27 @@ class DLCPoseEstimation(dj.Computed):
             "%Y-%m-%d %H:%M:%S"
         )
 
+        print("getting raw position")
+        raw_position = (
+            RawPosition()
+            & {
+                "nwb_file_name": key["nwb_file_name"],
+                "interval_list_name": key["interval_list_name"],
+            }
+        ).fetch_nwb()[0]
+        raw_pos_df = pd.DataFrame(
+            data=raw_position["raw_position"].data,
+            index=pd.Index(raw_position["raw_position"].timestamps, name="time"),
+            columns=raw_position["raw_position"].description.split(", "),
+        )
+        # TODO: should get timestamps from VideoFile, but need the video_frame_ind from RawPosition,
+        # which also has timestamps
+        key["meters_per_pixel"] = raw_position["raw_position"].conversion
+
         # Insert entry into DLCPoseEstimation
         self.insert1({**key, "pose_estimation_time": creation_time})
+        meters_per_pixel = key["meters_per_pixel"]
+        del key["meters_per_pixel"]
         body_parts = dlc_result.df.columns.levels[0]
         body_parts_df = {}
         # Insert dlc pose estimation into analysis NWB file for each body part.
@@ -213,6 +178,11 @@ class DLCPoseEstimation(dj.Computed):
                     }
                 )
         for body_part, part_df in body_parts_df.items():
+            print("converting to cm")
+            part_df = convert_to_cm(part_df, meters_per_pixel)
+            print("adding timestamps to DataFrame")
+            part_df = add_timestamps(part_df, raw_pos_df.copy())
+            key["bodypart"] = body_part
             key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
             nwb_analysis_file = AnalysisNwbfile()
             key["dlc_pose_estimation_object_id"] = nwb_analysis_file.add_nwb_object(
@@ -237,44 +207,22 @@ class DLCPoseEstimation(dj.Computed):
             axis=1,
         )
 
-    # @classmethod
-    # def get_trajectory(cls, key, body_parts="all"):
-    #     """Returns a pandas dataframe of coordinates of the specified body_part(s)
 
-    #     Parameters
-    #     ----------
-    #     key: A DataJoint query specifying one PoseEstimation entry. body_parts:
-    #     Optional. Body parts as a list. If "all", all joints
+def convert_to_cm(df, meters_to_pixels):
 
-    #     Returns
-    #     -------
-    #     df: multi index pandas dataframe with DLC scorer names, body_parts
-    #         and x/y coordinates of each joint name for a camera_id, similar to output of
-    #         DLC dataframe. If 2D, z is set of zeros
-    #     """
-    #     import pandas as pd
+    CM_TO_METERS = 100
+    idx = pd.IndexSlice
+    df.loc[:, idx[("x", "y")]] *= meters_to_pixels * CM_TO_METERS
+    return df
 
-    #     model_name = key["model_name"]
 
-    #     if body_parts == "all":
-    #         body_parts = (cls.BodyPart & key).fetch("body_part")
-    #     else:
-    #         body_parts = list(body_parts)
+def add_timestamps(df: pd.DataFrame, raw_pos_df: pd.DataFrame) -> pd.DataFrame:
 
-    #     df = None
-    #     for body_part in body_parts:
-    #         x_pos, y_pos, z_pos, likelihood = (
-    #             cls.BodyPart & {"body_part": body_part}
-    #         ).fetch1("x_pos", "y_pos", "z_pos", "likelihood")
-    #         if not z_pos:
-    #             z_pos = np.zeros_like(x_pos)
-
-    #         a = np.vstack((x_pos, y_pos, z_pos, likelihood))
-    #         a = a.T
-    #         pdindex = pd.MultiIndex.from_product(
-    #             [[model_name], [body_part], ["x", "y", "z", "likelihood"]],
-    #             names=["scorer", "bodyparts", "coords"],
-    #         )
-    #         frame = pd.DataFrame(a, columns=pdindex, index=range(0, a.shape[0]))
-    #         df = pd.concat([df, frame], axis=1)
-    #     return df
+    raw_pos_df["time"] = raw_pos_df.index
+    raw_pos_df.set_index("video_frame_ind", inplace=True)
+    df = df.join(raw_pos_df)
+    # Drop indices where time is NaN
+    df = df.dropna(subset=["time"])
+    # Add video_frame_ind as column
+    df = df.rename_axis("video_frame_ind").reset_index()
+    return df

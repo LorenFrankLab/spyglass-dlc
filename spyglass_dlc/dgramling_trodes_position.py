@@ -13,7 +13,6 @@ from position_tools import (
     interpolate_nan,
 )
 from position_tools.core import gaussian_smooth
-from tqdm import tqdm_notebook as tqdm
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from spyglass.common.common_behav import RawPosition
@@ -27,8 +26,6 @@ class TrodesPosParams(dj.Manual):
     Parameters for calculating the position (centroid, velocity, orientation)
     """
 
-    # TODO: whether to keep all params in a params dict
-    # or break out into individual secondary keys
     definition = """
     trodes_pos_params_name: varchar(80) # name for this set of parameters
     ---
@@ -51,7 +48,10 @@ class TrodesPosParams(dj.Manual):
             "upsampling_sampling_rate": None,
             "upsampling_interpolation_method": "linear",
         }
-        cls.insert1({"trodes_pos_params_name": "default", "params": params})
+        cls.insert1(
+            {"trodes_pos_params_name": "default", "params": params},
+            skip_duplicates=True,
+        )
 
 
 @schema
@@ -78,9 +78,9 @@ class TrodesPos(dj.Computed):
     -> TrodesPosSelection
     ---
     -> AnalysisNwbfile
-    trodes_centroid_object_id : varchar(80)
-    trodes_orientation_object_id : varchar(80)
-    trodes_velocity_object_id : varchar(80)
+    position_object_id : varchar(80)
+    orientation_object_id : varchar(80)
+    velocity_object_id : varchar(80)
     """
 
     def make(self, key):
@@ -88,7 +88,6 @@ class TrodesPos(dj.Computed):
         key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
         raw_position = (RawPosition() & key).fetch_nwb()[0]
         position_info_parameters = (TrodesPosParams() & key).fetch1("params")
-
         position = pynwb.behavior.Position()
         orientation = pynwb.behavior.CompassDirection()
         velocity = pynwb.behavior.BehavioralTimeSeries()
@@ -110,7 +109,6 @@ class TrodesPos(dj.Computed):
                 position_info_parameters["upsampling_sampling_rate"],
                 position_info_parameters["upsampling_interpolation_method"],
             )
-
             # create nwb objects for insertion into analysis nwb file
             position.create_spatial_series(
                 name="position",
@@ -143,6 +141,14 @@ class TrodesPos(dj.Computed):
                 ),
                 comments=spatial_series.comments,
                 description="x_velocity, y_velocity, speed",
+            )
+            velocity.create_timeseries(
+                name="video_frame_ind",
+                unit="index",
+                timestamps=position_info["time"],
+                data=raw_position["raw_position"].data,
+                description="video_frame_ind",
+                comments=spatial_series.comments,
             )
         except ValueError:
             pass
@@ -333,6 +339,7 @@ class TrodesPos(dj.Computed):
             name="time",
         )
         COLUMNS = [
+            "video_frame_ind",
             "position_x",
             "position_y",
             "orientation",
@@ -343,6 +350,10 @@ class TrodesPos(dj.Computed):
         return pd.DataFrame(
             np.concatenate(
                 (
+                    np.asarray(
+                        nwb_data["velocity"].time_series["video_frame_ind"].data,
+                        dtype=int,
+                    )[:, np.newaxis],
                     np.asarray(nwb_data["position"].get_spatial_series().data),
                     np.asarray(nwb_data["orientation"].get_spatial_series().data)[
                         :, np.newaxis

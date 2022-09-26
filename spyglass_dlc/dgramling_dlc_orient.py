@@ -2,23 +2,21 @@ import numpy as np
 import pandas as pd
 import datajoint as dj
 import pynwb
-import os
-import sys
-import bottleneck as bn
-from typing import List, Dict, OrderedDict
-from pathlib import Path
 from position_tools.core import gaussian_smooth
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from .dgramling_dlc_cohort import DLCSmoothInterpCohort
 from .dgramling_dlc_project import BodyPart
+from spyglass.common.common_behav import RawPosition
 
 schema = dj.schema("dgramling_dlc_orient")
 
 
 @schema
 class DLCOrientationParams(dj.Manual):
-    """Parameters for calculating the centroid"""
+    """
+    Parameters for determining and smoothing the orientation of a set of BodyParts
+    """
 
     definition = """
     dlc_orientation_params_name: varchar(80) # name for this set of parameters
@@ -33,12 +31,16 @@ class DLCOrientationParams(dj.Manual):
     @classmethod
     def insert_default(cls):
         params = {
-            "orient_method": "red_bisector",
+            "orient_method": "red_led_bisector",
             "led1": "redLED_L",
             "led2": "redLED_R",
             "led3": "redLED_C",
+            "orientation_smoothing_std_dev": 0.001,
         }
-        cls.insert1({"dlc_orientation_params_name": "default", "params": params})
+        cls.insert1(
+            {"dlc_orientation_params_name": "default", "params": params},
+            skip_duplicates=True,
+        )
 
 
 @schema
@@ -54,7 +56,9 @@ class DLCOrientationSelection(dj.Manual):
 
 @schema
 class DLCOrientation(dj.Computed):
-    """ """
+    """
+    Determines and smooths orientation of a set of bodyparts given a specified method
+    """
 
     definition = """
     -> DLCOrientationSelection
@@ -64,7 +68,6 @@ class DLCOrientation(dj.Computed):
     """
 
     def make(self, key):
-        key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
         # Get labels to smooth from Parameters table
         cohort_entries = DLCSmoothInterpCohort.BodyPart & key
         pos_df = pd.concat(
@@ -72,16 +75,17 @@ class DLCOrientation(dj.Computed):
                 bodypart: (
                     DLCSmoothInterpCohort.BodyPart & {**key, **{"bodypart": bodypart}}
                 ).fetch1_dataframe()
-                for bodypart in cohort_entries.fetch("bodyparts")
-            }
+                for bodypart in cohort_entries.fetch("bodypart")
+            },
+            axis=1,
         )
         params = (DLCOrientationParams() & key).fetch1("params")
         orientation_smoothing_std_dev = params.pop(
             "orientation_smoothing_std_dev", None
         )
-        dt = np.median(np.diff(pos_df["time"]))
+        dt = np.median(np.diff(pos_df.index.to_numpy()))
         sampling_rate = 1 / dt
-        orient_func = _key_to_func_dict(params["orient_method"])
+        orient_func = _key_to_func_dict[params["orient_method"]]
         orientation = orient_func(pos_df, **params)
         # Smooth orientation
         is_nan = np.isnan(orientation)
@@ -99,23 +103,51 @@ class DLCOrientation(dj.Computed):
         final_df = pd.DataFrame(
             orientation, columns=["orientation"], index=pos_df.index
         )
+        key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
+        spatial_series = (RawPosition() & key).fetch_nwb()[0]["raw_position"]
+        orientation = pynwb.behavior.CompassDirection()
+        orientation.create_spatial_series(
+            name="orientation",
+            timestamps=final_df.index.to_numpy(),
+            conversion=1.0,
+            data=final_df["orientation"].to_numpy(),
+            reference_frame=spatial_series.reference_frame,
+            comments=spatial_series.comments,
+            description="orientation",
+        )
         nwb_analysis_file = AnalysisNwbfile()
         key["dlc_orientation_object_id"] = nwb_analysis_file.add_nwb_object(
-            analysis_file_name=key["analysis_file_name"],
-            nwb_object=final_df,
+            key["analysis_file_name"], orientation
         )
+
         nwb_analysis_file.add(
             nwb_file_name=key["nwb_file_name"],
             analysis_file_name=key["analysis_file_name"],
         )
 
-        def fetch_nwb(self, *attrs, **kwargs):
-            return fetch_nwb(
-                self, (AnalysisNwbfile, "analysis_file_abs_path"), *attrs, **kwargs
-            )
+        self.insert1(key)
 
-        def fetch1_dataframe(self):
-            return self.fetch_nwb()[0]["dlc_orientation"].set_index("time")
+    def fetch_nwb(self, *attrs, **kwargs):
+        return fetch_nwb(
+            self, (AnalysisNwbfile, "analysis_file_abs_path"), *attrs, **kwargs
+        )
+
+    def fetch1_dataframe(self):
+        nwb_data = self.fetch_nwb()[0]
+        index = pd.Index(
+            np.asarray(nwb_data["dlc_orientation"].get_spatial_series().timestamps),
+            name="time",
+        )
+        COLUMNS = [
+            "orientation",
+        ]
+        return pd.DataFrame(
+            np.asarray(nwb_data["dlc_orientation"].get_spatial_series().data)[
+                :, np.newaxis
+            ],
+            columns=COLUMNS,
+            index=index,
+        )
 
 
 def two_pt_head_orientation(pos_df: pd.DataFrame, **params):
@@ -154,7 +186,7 @@ def red_led_bisector_orientation(pos_df: pd.DataFrame, **params):
             orientation.append(np.arctan2(norm[1], norm[0]))
         if index + 1 == len(pos_df):
             break
-    return orientation
+    return np.array(orientation)
 
 
 # Add new functions for orientation calculation here

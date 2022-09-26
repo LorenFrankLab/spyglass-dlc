@@ -1,13 +1,16 @@
+import stat
+import glob
+import shutil
+import os
+from itertools import combinations
+from typing import List, Dict
+from pathlib import Path
+import getpass
+import ruamel.yaml
 import numpy as np
 import datajoint as dj
-import os
-import glob
-import ruamel.yaml
-from itertools import combinations
-from typing import List, Dict, OrderedDict
-from pathlib import Path
 from spyglass.common.common_lab import LabTeam
-from .dlc_utils import _convert_mp4
+from .dlc_utils import check_videofile, _set_permissions, get_video_path
 
 
 schema = dj.schema("dgramling_dlc_project")
@@ -31,13 +34,15 @@ class DLCProject(dj.Manual):
     With ability to edit config, extract frames, label frames
     """
 
+    # Add more parameters as secondary keys...
+    # TODO: collapse params into blob dict
     definition = """
     project_name     : varchar(100) # name of DLC project
     ---
     -> LabTeam
     bodyparts        : blob         # list of bodyparts to label
     frames_per_video : int          # number of frames to extract from each video
-    config_path      : varchar(120) # path to config.yaml for model
+    config_path      : varchar(120) # path to config.yaml for model 
     """
 
     class BodyPart(dj.Part):
@@ -64,8 +69,6 @@ class DLCProject(dj.Manual):
         assert (
             key["project_name"] not in project_names_in_use
         ), f"project name: {key['project_name']} is already in use."
-        if not bool(LabTeam() & {"team_name": key["team_name"]}):
-            raise ValueError(f"team_name: {key['team_name']} does not exist in LabTeam")
         assert isinstance(
             key["frames_per_video"], int
         ), "frames_per_video must be of type `int`"
@@ -113,7 +116,18 @@ class DLCProject(dj.Manual):
         if frames_per_video:
             if frames_per_video != cfg["numframes2pick"]:
                 add_to_config(config_path, **{"numframes2pick": frames_per_video})
-
+        project_path = Path(config_path).parent
+        dlc_project_path = os.environ["DLC_PROJECT_PATH"]
+        if dlc_project_path not in project_path.as_posix():
+            project_dirname = project_path.name
+            new_proj_dir = shutil.copytree(
+                src=project_path, dst=f"{dlc_project_path}/{project_dirname}/"
+            )
+            new_config_path = Path(new_proj_dir / "config.yaml")
+            assert new_config_path.exists(), "config.yaml did not copy to new location"
+            config_path = new_config_path
+            add_to_config(config_path, **{"project_path": new_proj_dir})
+        # TODO still need to copy videos over to video dir
         key = {
             "project_name": project_name,
             "team_name": lab_team,
@@ -138,10 +152,10 @@ class DLCProject(dj.Manual):
         bodyparts: List,
         lab_team: str,
         frames_per_video: int,
-        video_path: str,
-        project_directory: str = "cumulus/deeplabcut/",
-        convert_video=False,
-        video_names: List = None,
+        video_list: List,
+        project_directory: str = os.environ["DLC_PROJECT_PATH"],
+        output_path: str = os.environ["DLC_VIDEO_PATH"],
+        set_permissions=False,
         **kwargs,
     ):
         """
@@ -159,31 +173,54 @@ class DLCProject(dj.Manual):
             (Default is '/cumulus/deeplabcut/')
         frames_per_video : int
             number of frames to extract from each video
-        video_path : str
-            directory where videos to create model from are stored
-        convert_video : bool
-            if True will convert videos in video_path to .MP4 format from .h264
+        video_list : list
+            list of dicts of form [{'nwb_file_name': nwb_file_name, 'epoch': epoch #},...]
+            to query VideoFile table for videos to train on.
+            Can also be list of absolute paths to import videos from
+        output_path : str
+            target path to output converted videos
+            (Default is '/nimbus/deeplabcut/videos/')
+        set_permissions : bool
+            if True, will set permissions for user and group to be read+write
             (Default is False)
-        video_names : list
-            (Default is None) list of video names to extract frames from
-            If not None, will limit videos within video_path to use
         """
-
+        add_to_files = kwargs.pop("add_to_files", True)
+        if not bool(LabTeam() & {"team_name": lab_team}):
+            raise ValueError(f"team_name: {lab_team} does not exist in LabTeam")
         skeleton_node = None
-        if convert_video:
-            raise NotImplementedError(f"argument `convert_video` has yet to be tested")
-            videos_to_convert = glob.glob(video_path + "*.h264")
-            (
-                _convert_mp4(video, video_path, video_path, "mp4")
-                for video in videos_to_convert
-            )
-        videos = glob.glob(video_path + "*.mp4")
-        if len(videos) < 1:
-            raise ValueError(f"no .mp4 videos found in{video_path}")
-        if video_names:
+        # If dict, assume of form {'nwb_file_name': nwb_file_name, 'epoch': epoch}
+        # and pass to get_video_path to reference VideoFile table for path
+        if all(isinstance(n, Dict) for n in video_list):
+            videos_to_convert = [get_video_path(video_key) for video_key in video_list]
             videos = [
-                video for video in videos if any(map(video.__contains__, video_names))
+                check_videofile(
+                    video_path=video[0],
+                    output_path=output_path,
+                    video_filename=video[1],
+                )
+                for video in videos_to_convert
             ]
+        # If not dict, assume list of video file paths that may or may not need to be converted
+        else:
+            videos = []
+            if not all([Path(video).exists() for video in video_list]):
+                raise OSError("at least one file in video_list does not exist")
+            for video in video_list:
+                video_path = Path(video).parent
+                video_filename = video.rsplit(video_path.as_posix(), maxsplit=1)[
+                    -1
+                ].split("/")[-1]
+                videos.extend(
+                    [
+                        check_videofile(
+                            video_path=video_path,
+                            output_path=output_path,
+                            video_filename=video_filename,
+                        )[0].as_posix()
+                    ]
+                )
+            if len(videos) < 1:
+                raise ValueError(f"no .mp4 videos found in{video_path}")
         from deeplabcut import create_new_project
 
         config_path = create_new_project(
@@ -197,24 +234,38 @@ class DLCProject(dj.Manual):
         for bodypart in bodyparts:
             if not bool(BodyPart() & {"bodypart": bodypart}):
                 raise ValueError(f"bodypart: {bodypart} not found in BodyPart table")
-        add_to_config(
-            config_path,
-            bodyparts,
-            skeleton_node=skeleton_node,
-            numframes2pick=frames_per_video,
-            dotsize=3,
-        )
+        kwargs.update({"numframes2pick": frames_per_video, "dotsize": 3})
+        add_to_config(config_path, bodyparts, skeleton_node=skeleton_node, **kwargs)
         key = {
             "project_name": project_name,
             "team_name": lab_team,
             "bodyparts": bodyparts,
             "config_path": config_path,
-            "numframes2pick": frames_per_video,
+            "frames_per_video": frames_per_video,
         }
-        if not os.path.exists(key["video_path"]):
-            raise OSError(f"{key['video_path']} does not exist")
+        # TODO: make permissions setting more flexible.
+        if set_permissions:
+            permissions = (
+                stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH
+            )
+            username = getpass.getuser()
+            if not groupname:
+                groupname = username
+            _set_permissions(
+                directory=project_directory,
+                mode=permissions,
+                username=username,
+                groupname=groupname,
+            )
         cls.insert1(key)
         cls.BodyPart.insert((project_name, bp) for bp in bodyparts)
+        if add_to_files:
+            del key["bodyparts"]
+            del key["team_name"]
+            del key["config_path"]
+            del key["frames_per_video"]
+            # Add videos to training files
+            cls.add_training_files(key)
 
     @classmethod
     def add_training_files(cls, key):
@@ -237,7 +288,7 @@ class DLCProject(dj.Manual):
                 )
             )
         for video in video_names:
-            key["file_name"] = f'video_{os.path.splitext(video.split("/")[-1])[0]}'
+            key["file_name"] = f'{os.path.splitext(video.split("/")[-1])[0]}'
             key["file_ext"] = os.path.splitext(video.split("/")[-1])[-1].split(".")[-1]
             key["file_path"] = video
             cls.File.insert1(key, skip_duplicates=True)

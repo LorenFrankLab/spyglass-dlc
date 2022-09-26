@@ -1,21 +1,12 @@
 from pathlib import Path, PosixPath, PurePath
 import os
-import sys
 import glob
-from typing import List, Dict, OrderedDict
-import numpy as np
-import pandas as pd
 import datajoint as dj
-from datajoint.errors import DataJointError
 import ruamel.yaml as yaml
 from spyglass.common.common_lab import LabTeam
 from .dgramling_dlc_project import BodyPart, DLCProject
 from .dgramling_dlc_training import DLCModelTraining, DLCModelTrainingParams
 from .dlc_decorators import accepts
-from .dlc_utils import (
-    find_full_path,
-    get_dlc_root_data_dir,
-)
 from . import dlc_reader
 
 schema = dj.schema("dgramling_dlc_model")
@@ -72,12 +63,13 @@ class DLCModelSource(dj.Manual):
         """
 
     @classmethod
-    @accepts(None, None, ("FromUpstream", "FromImport"))
+    @accepts(None, None, ("FromUpstream", "FromImport"), None)
     def insert_entry(
         cls,
         dlc_model_name: str,
         project_name: str,
         source: str = "FromUpstream",
+        key: dict = None,
         **kwargs,
     ):
 
@@ -92,6 +84,7 @@ class DLCModelSource(dj.Manual):
                 "dlc_model_name": dlc_model_name,
                 "project_name": project_name,
                 "project_path": project_path,
+                **key,
             },
             **kwargs,
         )

@@ -25,12 +25,27 @@ from .dgramling_dlc_orient import (
     DLCOrientationSelection,
     DLCOrientation,
 )
+from .dgramling_dlc_selection import DLCPosSelection, DLCPos, DLCPosVideo
+from .dgramling_trodes_position import TrodesPosParams, TrodesPosSelection, TrodesPos
+from .dgramling_position import (
+    PosSelect,
+    PosSource,
+    IntervalPositionInfo,
+    IntervalPositionInfoSelection,
+)
 from .dlc_utils import (
     get_dlc_root_data_dir,
     get_dlc_processed_data_dir,
     find_full_path,
     find_root_directory,
     _convert_mp4,
+    check_videofile,
+    get_video_path,
+)
+from .dlc_reader import (
+    read_yaml,
+    save_yaml,
+    do_pose_estimation,
 )
 
 
@@ -47,4 +62,7 @@ _schemas = [
     "dgramling_dlc_cohort",
     "dgramling_dlc_centroid",
     "dgramling_dlc_orient",
+    "dgramling_dlc_selection",
+    "dgramling_trodes_position",
+    "dgramling_position",
 ]

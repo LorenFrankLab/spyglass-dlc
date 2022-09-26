@@ -162,7 +162,7 @@ def read_yaml(fullpath, filename="*"):
 
     # Take the DJ-saved if there. If not, return list of available
     yml_paths = list(Path(fullpath).glob("dj_dlc_config.yaml")) or sorted(
-        list(Path(fullpath).glob("{filename}.y*ml"))
+        list(Path(fullpath).glob(f"{filename}.y*ml"))
     )
 
     assert (  # If more than 1 and not DJ-saved,
@@ -191,7 +191,7 @@ def save_yaml(output_dir, config_dict, filename="dj_dlc_config", mkdir=True):
     if "config_template" in config_dict:  # if passed full model.Model dict
         config_dict = config_dict["config_template"]
     if mkdir:
-        output_dir.mkdir(exist_ok=True)
+        Path(output_dir).mkdir(exist_ok=True)
     if "." in filename:  # if user provided extension, remove
         filename = filename.split(".")[0]
 
@@ -240,7 +240,6 @@ def do_pose_estimation(
     # To project dir: Required by DLC to run the analyze_videos
     if dlc_project_path != output_dir:
         config_filepath = save_yaml(dlc_project_path, dlc_config)
-
     # ---- Trigger DLC prediction job ----
     analyze_videos(
         config=config_filepath,
