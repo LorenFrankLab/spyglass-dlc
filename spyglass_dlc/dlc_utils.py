@@ -3,9 +3,48 @@
 
 import pathlib
 import os
+import pwd
+import grp
 from collections import abc
 from typing import Union
 import datajoint as dj
+
+
+def _set_permissions(directory, mode, username: str, groupname: str = None):
+    """
+    Use to recursively set ownership and permissions for directories/files that result from the DLC pipeline
+
+    Parameters
+    ----------
+    directory : str or PosixPath
+        path to target directory
+    mode : stat read-out
+        list of permissions to set using stat package
+        (e.g. mode = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP)
+    username : str
+        username of user to set as owner and apply permissions to
+    groupname : str
+        existing Linux groupname to set as group owner
+        and apply permissions to
+
+    Returns
+    -------
+    None
+    """
+
+    directory = pathlib.Path(directory)
+    assert directory.exists(), f"Target directory: {directory} does not exist"
+    uid = pwd.getpwnam(username).pw_uid
+    if groupname:
+        gid = grp.getgrnam(groupname).gr_gid
+    else:
+        gid = None
+    for dirpath, dirnames, filenames in os.walk(directory):
+        os.chown(dirpath, uid, gid)
+        os.chmod(dirpath, mode)
+        for filename in filenames:
+            os.chown(os.path.join(dirpath, filename), uid, gid)
+            os.chmod(os.path.join(dirpath, filename), mode)
 
 
 def get_dlc_root_data_dir():
@@ -129,6 +168,7 @@ def get_video_path(key):
     video_filepath = nwb_video.external_file[0]
     video_dir = os.path.dirname(video_filepath) + "/"
     video_filename = video_filepath.split(video_dir)[-1]
+    io.close()
     return video_dir, video_filename
 
 
@@ -160,6 +200,7 @@ def check_videofile(
     output_files : List of PosixPath objects
         paths to converted video file(s)
     """
+
     if not video_filename:
         video_files = pathlib.Path(video_path).glob(f"*.{video_filetype}")
     else:
