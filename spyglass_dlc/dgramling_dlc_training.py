@@ -18,7 +18,12 @@ class DLCModelTrainingParams(dj.Lookup):
     params                        : longblob    # dictionary of all applicable parameters
     """
 
-    required_parameters = ("shuffle", "trainingsetindex")
+    required_parameters = (
+        "shuffle",
+        "trainingsetindex",
+        "net_type",
+        "gputouse",
+    )
     skipped_parameters = ("project_path", "video_sets")
 
     @classmethod
@@ -73,14 +78,13 @@ class DLCModelTrainingSelection(dj.Manual):
     # allows for multiple training runs for a specific parameter set and project
     ---
     model_prefix='' : varchar(32)
-    project_path='' : varchar(255) # DLC's project_path in config relative to root
     """
 
     def insert1(self, key, **kwargs):
         training_id = key["training_id"]
         if training_id is None:
             training_id = (dj.U().aggr(self, n="max(training_id)").fetch1("n") or 0) + 1
-        key["training_id"].update(training_id)
+        key["training_id"] = training_id
         super().insert1(key, **kwargs)
 
 
@@ -89,6 +93,7 @@ class DLCModelTraining(dj.Computed):
     definition = """
     -> DLCModelTrainingSelection
     ---
+    project_path         : varchar(255) # Path to project directory
     latest_snapshot: int unsigned # latest exact snapshot index (i.e., never -1)
     config_template: longblob     # stored full config file
     """
@@ -99,11 +104,9 @@ class DLCModelTraining(dj.Computed):
     def make(self, key):
         """Launch training for each train.TrainingTask training_id via `.populate()`."""
         # Not sure what either of these accomplish
-        project_path, model_prefix = (DLCModelTrainingSelection & key).fetch1(
-            "project_path", "model_prefix"
-        )
-        from deeplabcut import train_network
-        import dlc_reader
+        model_prefix = (DLCModelTrainingSelection & key).fetch1("model_prefix")
+        from deeplabcut import train_network, create_training_dataset
+        from . import dlc_reader
         from deeplabcut.utils.auxiliaryfunctions import (
             read_config,
             get_deeplabcut_path,
@@ -120,60 +123,72 @@ class DLCModelTraining(dj.Computed):
         config_path = (DLCProject() & key).fetch1("config_path")
         dlc_config = read_config(config_path)
         project_path = dlc_config["project_path"]
-
+        key["project_path"] = project_path
         # ---- Build and save DLC configuration (yaml) file ----
         _, dlc_config = dlc_reader.read_yaml(project_path)
+        if not dlc_config:
+            dlc_config = read_config(config_path)
         dlc_config.update((DLCModelTrainingParams & key).fetch1("params"))
         dlc_config.update(
             {
-                "project_path": Path(project_path),
+                "project_path": Path(project_path).as_posix(),
                 "modelprefix": model_prefix,
                 "train_fraction": dlc_config["TrainingFraction"][
                     int(dlc_config["trainingsetindex"])
                 ],
                 "training_filelist_datajoint": [  # don't overwrite origin video_sets
-                    Path(fp) for fp in (DLCProject.File & key).fetch("file_path")
+                    Path(fp).as_posix()
+                    for fp in (DLCProject.File & key).fetch("file_path")
                 ],
             }
         )
         # Write dlc config file to base project folder
         # TODO: need to make sure this will work
         dlc_cfg_filepath = dlc_reader.save_yaml(project_path, dlc_config)
-
+        # ---- create training dataset ----
+        training_dataset_input_args = list(
+            inspect.signature(create_training_dataset).parameters
+        )
+        training_dataset_kwargs = {
+            k: v for k, v in dlc_config.items() if k in training_dataset_input_args
+        }
+        create_training_dataset(dlc_cfg_filepath, **training_dataset_kwargs)
         # ---- Trigger DLC model training job ----
         train_network_input_args = list(inspect.signature(train_network).parameters)
         train_network_kwargs = {
             k: v for k, v in dlc_config.items() if k in train_network_input_args
         }
         for k in ["shuffle", "trainingsetindex", "maxiters"]:
-            train_network_kwargs[k] = int(train_network_kwargs[k])
-        # TODO: THIS PART IS A LITTLE SKETCH and edits something that maybe shouldn't be changed
-        pose_yaml_path = list(
-            Path(
-                project_path
-                / get_model_folder(
-                    trainFraction=dlc_config["train_fraction"],
-                    shuffle=dlc_config["shuffle"],
-                    cfg=dlc_config,
-                    modelprefix=dlc_config["modelprefix"],
-                )
-                / "train"
-            ).glob("*.y*ml")
-        )
-        assert (
-            len(pose_yaml_path) == 1
-        ), f"Found more yaml files than expected: {len(pose_yaml_path)}"
-        pose_yaml_path = pose_yaml_path[0]
-        if pose_yaml_path.exists():
-            username = getpass.getuser()
-            pose_config = read_config(pose_yaml_path)
-            if username not in pose_config["init_weights"]:
-                model_path, _ = auxfun_models.Check4weights(
-                    pose_config["net_type"],
-                    Path(get_deeplabcut_path()),
-                    dlc_config["shuffle"],
-                )
-                edit_config(pose_yaml_path, {"init_weights": model_path})
+            if k in train_network_kwargs:
+                train_network_kwargs[k] = int(train_network_kwargs[k])
+        # TODO: THIS PART IS A LITTLE SKETCH and broken and edits something that maybe shouldn't be changed
+        # pose_yaml_path = list(
+        #     Path(
+        #         project_path
+        #         / get_model_folder(
+        #             trainFraction=dlc_config["train_fraction"],
+        #             shuffle=dlc_config["shuffle"],
+        #             cfg=dlc_config,
+        #             modelprefix=dlc_config["modelprefix"],
+        #         )
+        #         / "train"
+        #     ).glob("*.y*ml")
+        # )
+        # assert (
+        #     len(pose_yaml_path) == 1
+        # ), f"Found more yaml files than expected: {len(pose_yaml_path)}"
+        # pose_yaml_path = pose_yaml_path[0]
+        # if pose_yaml_path.exists():
+        #     username = getpass.getuser()
+        #     pose_config = dlc_reader.read_yaml(pose_yaml_path)
+        #     if username not in pose_config["init_weights"]:
+        #         model_path, _ = auxfun_models.Check4weights(
+        #             pose_config["net_type"],
+        #             Path(get_deeplabcut_path()),
+        #             dlc_config["shuffle"],
+        #         )
+        #         pose_config.update({'init_weights': model_path'})
+        #         dlc_reader.save_yaml(pose_yaml_path, pose_config)
         try:
             train_network(dlc_cfg_filepath, **train_network_kwargs)
         except KeyboardInterrupt:  # Instructions indicate to train until interrupt
