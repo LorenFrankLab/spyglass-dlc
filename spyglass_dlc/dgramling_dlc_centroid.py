@@ -254,6 +254,14 @@ class DLCCentroid(dj.Computed):
             comments=spatial_series.comments,
             description="x_velocity, y_velocity, speed",
         )
+        velocity.create_timeseries(
+            name="video_frame_ind",
+            unit="index",
+            timestamps=final_df.index.to_numpy(),
+            data=pos_df[pos_df.columns.levels[0][0]].video_frame_ind.to_numpy(),
+            description="video_frame_ind",
+            comments="no comments",
+        )
         # Add to Analysis NWB file
         key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
         nwb_analysis_file = AnalysisNwbfile()
@@ -282,6 +290,7 @@ class DLCCentroid(dj.Computed):
             name="time",
         )
         COLUMNS = [
+            "video_frame_ind",
             "position_x",
             "position_y",
             "velocity_x",
@@ -291,6 +300,10 @@ class DLCCentroid(dj.Computed):
         return pd.DataFrame(
             np.concatenate(
                 (
+                    np.asarray(
+                        nwb_data["dlc_velocity"].time_series["video_frame_ind"].data,
+                        dtype=int,
+                    )[:, np.newaxis],
                     np.asarray(nwb_data["dlc_position"].get_spatial_series().data),
                     np.asarray(nwb_data["dlc_velocity"].time_series["velocity"].data),
                 ),
