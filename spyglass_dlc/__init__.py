@@ -25,10 +25,11 @@ from .dgramling_dlc_orient import (
     DLCOrientationSelection,
     DLCOrientation,
 )
-from .dgramling_dlc_selection import DLCPosSelection, DLCPos
+from .dgramling_dlc_selection import DLCPosSelection, DLCPos, DLCPosVideo
 from .dgramling_trodes_position import TrodesPosParams, TrodesPosSelection, TrodesPos
 from .dgramling_position import (
     PosSelect,
+    PosSource,
     IntervalPositionInfo,
     IntervalPositionInfoSelection,
 )
@@ -40,6 +41,11 @@ from .dlc_utils import (
     _convert_mp4,
     check_videofile,
     get_video_path,
+)
+from .dlc_reader import (
+    read_yaml,
+    save_yaml,
+    do_pose_estimation,
 )
 
 
