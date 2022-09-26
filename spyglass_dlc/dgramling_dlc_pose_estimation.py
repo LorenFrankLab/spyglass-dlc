@@ -4,7 +4,7 @@ from datetime import datetime
 import pandas as pd
 import datajoint as dj
 from spyglass.common.dj_helper_fn import fetch_nwb
-from spyglass.common.common_behav import VideoFile
+from spyglass.common.common_behav import VideoFile, RawPosition
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from .dgramling_dlc_project import BodyPart
 from .dgramling_dlc_model import DLCModel
@@ -73,7 +73,7 @@ class DLCPoseEstimationSelection(dj.Manual):
         video_path, video_filename = get_video_path(key)
         output_dir = cls.infer_output_dir(key, video_filename=video_filename)
         video_dir = os.path.dirname(video_path) + "/"
-        video_path = check_videofile(video_dir, video_filename, output_dir)[0]
+        video_path = check_videofile(video_dir, output_dir, video_filename)[0]
         cls.insert1(
             {
                 **key,
@@ -92,6 +92,7 @@ class DLCPoseEstimation(dj.Computed):
     -> DLCPoseEstimationSelection
     ---
     pose_estimation_time: datetime  # time of generation of this set of DLC results
+    meters_per_pixel : double       # conversion of meters per pixel for analyzed video
     """
 
     class BodyPart(dj.Part):
@@ -109,7 +110,7 @@ class DLCPoseEstimation(dj.Computed):
             )
 
         def fetch1_dataframe(self):
-            return self.fetch_nwb()[0]["dlc_pose_estimation"]
+            return self.fetch_nwb()[0]["dlc_pose_estimation"].set_index("time")
 
     def make(self, key):
         """.populate() method will launch training for each PoseEstimationTask"""
@@ -144,8 +145,27 @@ class DLCPoseEstimation(dj.Computed):
             "%Y-%m-%d %H:%M:%S"
         )
 
+        print("getting raw position")
+        raw_position = (
+            RawPosition()
+            & {
+                "nwb_file_name": key["nwb_file_name"],
+                "interval_list_name": key["interval_list_name"],
+            }
+        ).fetch_nwb()[0]
+        raw_pos_df = pd.DataFrame(
+            data=raw_position["raw_position"].data,
+            index=pd.Index(raw_position["raw_position"].timestamps, name="time"),
+            columns=raw_position["raw_position"].description.split(", "),
+        )
+        # TODO: should get timestamps from VideoFile, but need the video_frame_ind from RawPosition,
+        # which also has timestamps
+        key["meters_per_pixel"] = raw_position["raw_position"].conversion
+
         # Insert entry into DLCPoseEstimation
         self.insert1({**key, "pose_estimation_time": creation_time})
+        meters_per_pixel = key["meters_per_pixel"]
+        del key["meters_per_pixel"]
         body_parts = dlc_result.df.columns.levels[0]
         body_parts_df = {}
         # Insert dlc pose estimation into analysis NWB file for each body part.
@@ -158,6 +178,10 @@ class DLCPoseEstimation(dj.Computed):
                     }
                 )
         for body_part, part_df in body_parts_df.items():
+            print("converting to cm")
+            part_df = convert_to_cm(part_df, meters_per_pixel)
+            print("adding timestamps to DataFrame")
+            part_df = add_timestamps(part_df, raw_pos_df.copy())
             key["bodypart"] = body_part
             key["analysis_file_name"] = AnalysisNwbfile().create(key["nwb_file_name"])
             nwb_analysis_file = AnalysisNwbfile()
@@ -182,3 +206,23 @@ class DLCPoseEstimation(dj.Computed):
             },
             axis=1,
         )
+
+
+def convert_to_cm(df, meters_to_pixels):
+
+    CM_TO_METERS = 100
+    idx = pd.IndexSlice
+    df.loc[:, idx[("x", "y")]] *= meters_to_pixels * CM_TO_METERS
+    return df
+
+
+def add_timestamps(df: pd.DataFrame, raw_pos_df: pd.DataFrame) -> pd.DataFrame:
+
+    raw_pos_df["time"] = raw_pos_df.index
+    raw_pos_df.set_index("video_frame_ind", inplace=True)
+    df = df.join(raw_pos_df)
+    # Drop indices where time is NaN
+    df = df.dropna(subset=["time"])
+    # Add video_frame_ind as column
+    df = df.rename_axis("video_frame_ind").reset_index()
+    return df
