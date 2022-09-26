@@ -63,12 +63,13 @@ class DLCModelSource(dj.Manual):
         """
 
     @classmethod
-    @accepts(None, None, ("FromUpstream", "FromImport"))
+    @accepts(None, None, ("FromUpstream", "FromImport"), None)
     def insert_entry(
         cls,
         dlc_model_name: str,
         project_name: str,
         source: str = "FromUpstream",
+        key: dict = None,
         **kwargs,
     ):
 
@@ -83,6 +84,7 @@ class DLCModelSource(dj.Manual):
                 "dlc_model_name": dlc_model_name,
                 "project_name": project_name,
                 "project_path": project_path,
+                **key,
             },
             **kwargs,
         )
