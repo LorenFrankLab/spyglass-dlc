@@ -14,7 +14,9 @@ schema = dj.schema("dgramling_dlc_orient")
 
 @schema
 class DLCOrientationParams(dj.Manual):
-    """Parameters for calculating the centroid"""
+    """
+    Parameters for determining and smoothing the orientation of a set of BodyParts
+    """
 
     definition = """
     dlc_orientation_params_name: varchar(80) # name for this set of parameters
@@ -54,7 +56,9 @@ class DLCOrientationSelection(dj.Manual):
 
 @schema
 class DLCOrientation(dj.Computed):
-    """ """
+    """
+    Determines and smooths orientation of a set of bodyparts given a specified method
+    """
 
     definition = """
     -> DLCOrientationSelection
