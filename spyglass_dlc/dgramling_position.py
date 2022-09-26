@@ -8,24 +8,65 @@ from .dgramling_dlc_selection import DLCPos
 from .dgramling_trodes_position import TrodesPos
 
 schema = dj.schema("dgramling_position")
+# TODO: automatically insert from TrodesPos or DLCPos into PosSource Part tables at the end of make
 
 
 @schema
 class PosSelect(dj.Manual):
-    """ """
+    """
+    Table to specify which entry from upstream pipeline should be added to PosSource
+    Allows for multiple entries per epoch per source with incrementing position_id key
+    If specifying DLC as upstream, set dlc_params foreign key with dict of keys necessary
+    to query DLCPos
+    """
 
-    # TODO: I think the IntervalList dependency should be replaced by a table further downstream
+    # This would limit the user to only one entry per interval in IntervalPosInfo
     definition = """
     -> IntervalList
+    source: enum("DLC", "Trodes")
+    position_id: int
     ---
-    source : enum("DLC", "Trodes")
+    dlc_params = NULL: longblob     # dictionary with primary keys of upstream DLC entries
+    """
+
+    def insert1(self, key, **kwargs):
+        # TODO: not sure this logic with if/else makes sense...
+        position_id = key.get("position_id", None)
+        if position_id is None:
+            key["position_id"] = (
+                dj.U().aggr(self, n="max(position_id)").fetch1("n") or 0
+            ) + 1
+        else:
+            id = (self & key).fetch("position_id")
+            if len(id) > 0:
+                position_id = max(id) + 1
+            else:
+                position_id = max(0, position_id)
+            key["position_id"].update(position_id)
+        super().insert1(key, **kwargs)
+
+
+@schema
+class PosSource(dj.Computed):
+    """
+    Table to identify source of Position Information from upstream options
+    (e.g. DLC, Trodes, etc...) To add another upstream option, a new Part table
+    should be added in the same syntax as DLCPos and TrodesPos and
+    PosSelect source header should be modified to include the name.
+    """
+
+    definition = """
+    -> PosSelect
+    ---
     """
 
     class DLCPos(dj.Part):
-        """ """
+        """
+        Table to pass-through upstream DLC Pose Estimation information
+        """
 
         definition = """
-        -> PosSelect
+        -> PosSource
         -> DLCPos
         ---
         -> AnalysisNwbfile
@@ -35,10 +76,12 @@ class PosSelect(dj.Manual):
         """
 
     class TrodesPos(dj.Part):
-        """ """
+        """
+        Table to pass-through upstream Trodes Position Tracking information
+        """
 
         definition = """
-        -> PosSelect
+        -> PosSource
         -> TrodesPos
         ---
         -> AnalysisNwbfile
@@ -47,20 +90,54 @@ class PosSelect(dj.Manual):
         velocity_object_id : varchar(80)
         """
 
+    def make(self, key):
+        self.insert1(key)
+        source, dlc_key = (PosSelect & key).fetch1("source", "dlc_params")
+        part_table = getattr(self, f"{source}Pos")
+        table_query = (
+            dj.FreeTable(dj.conn(), full_table_name=part_table.parents()[1]) & dlc_key
+        )
+        (
+            analysis_file_name,
+            position_object_id,
+            orientation_object_id,
+            velocity_object_id,
+        ) = table_query.fetch1(
+            "analysis_file_name",
+            "position_object_id",
+            "orientation_object_id",
+            "velocity_object_id",
+        )
+        part_table.insert1(
+            {
+                **key,
+                "analysis_file_name": analysis_file_name,
+                "position_object_id": position_object_id,
+                "orientation_object_id": orientation_object_id,
+                "velocity_object_id": velocity_object_id,
+                **dlc_key,
+            },
+        )
+
 
 @schema
 class IntervalPositionInfoSelection(dj.Manual):
-    """ """
+    """
+    Table to specify which upstream PosSelect entry to populate IntervalPositionInfo
+    """
 
     definition = """
-    -> PosSelect
+    -> PosSource
     ---
     """
 
 
 @schema
 class IntervalPositionInfo(dj.Computed):
-    """ """
+    """
+    Holds position information in a singluar location for an
+    arbitrary number of upstream position processing options
+    """
 
     definition = """
     -> IntervalPositionInfoSelection
@@ -72,9 +149,9 @@ class IntervalPositionInfo(dj.Computed):
     """
 
     def make(self, key):
-        source = (PosSelect & key).fetch1("source")
+        source = (PosSource & key).fetch1("source")
         table_source = f"{source}Pos"
-        SourceTable = getattr(PosSelect, table_source)
+        SourceTable = getattr(PosSource, table_source)
         (
             key["analysis_file_name"],
             key["position_object_id"],
@@ -100,6 +177,7 @@ class IntervalPositionInfo(dj.Computed):
             name="time",
         )
         COLUMNS = [
+            "video_frame_ind",
             "position_x",
             "position_y",
             "orientation",
@@ -110,6 +188,10 @@ class IntervalPositionInfo(dj.Computed):
         return pd.DataFrame(
             np.concatenate(
                 (
+                    np.asarray(
+                        nwb_data["velocity"].time_series["video_frame_ind"].data,
+                        dtype=int,
+                    )[:, np.newaxis],
                     np.asarray(nwb_data["position"].get_spatial_series().data),
                     np.asarray(nwb_data["orientation"].get_spatial_series().data)[
                         :, np.newaxis
