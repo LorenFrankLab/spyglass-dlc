@@ -3,7 +3,6 @@ from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from .dgramling_dlc_pose_estimation import DLCPoseEstimation
 from .dgramling_dlc_position import DLCSmoothInterp
-from .dgramling_dlc_project import BodyPart
 
 schema = dj.schema("dgramling_dlc_cohort")
 
@@ -15,13 +14,11 @@ class DLCSmoothInterpCohortSelection(dj.Manual):
     get combined into a cohort
     """
 
-    # TODO: try to make a strict dependence on DLCSmoothInterpSelection
     definition = """
     dlc_si_cohort_selection_name : varchar(120)
     -> DLCPoseEstimation
     ---
-    dlc_si_params_name      : varchar(80)   # descriptive name of this interval list
-    bodyparts               : blob          # List of bodyparts to include in cohort
+    bodyparts_params_dict   : blob      # Dict with bodypart as key and desired dlc_si_params_name as value
     """
 
 
@@ -59,11 +56,20 @@ class DLCSmoothInterpCohort(dj.Computed):
         # from Jen Guidera
         self.insert1(key)
         cohort_selection = (DLCSmoothInterpCohortSelection & key).fetch1()
-        table_entries = (DLCSmoothInterp & cohort_selection).fetch()
-        table_column_names = list(table_entries.dtype.fields.keys())
+        table_entries = []
+        bodyparts_params_dict = cohort_selection.pop("bodyparts_params_dict")
+        temp_key = cohort_selection.copy()
+        for bodypart, params in bodyparts_params_dict.items():
+            temp_key["bodypart"] = bodypart
+            temp_key["dlc_si_params_name"] = params
+            table_entries.append((DLCSmoothInterp & temp_key).fetch())
+        assert len(table_entries) == len(
+            bodyparts_params_dict
+        ), "more entries found in DLCSmoothInterp than specified in bodyparts_params_dict"
+        table_column_names = list(table_entries[0].dtype.fields.keys())
         for table_entry in table_entries:
             entry_key = {
-                **{k: v for k, v in zip(table_column_names, table_entry)},
+                **{k: v for k, v in zip(table_column_names, table_entry[0])},
                 **key,
             }
             DLCSmoothInterpCohort.BodyPart.insert1(entry_key, skip_duplicates=True)
