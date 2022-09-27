@@ -35,6 +35,22 @@ class DLCCentroidParams(dj.Manual):
     _four_led_labels = ["green_LED", "red_LED_L", "red_LED_C", "red_LED_R"]
     _two_pt_labels = ["point1", "point2"]
 
+    @classmethod
+    def insert_default(cls):
+        """
+        Inserts default centroid parameters. Assumes 2 LEDs tracked
+        """
+        params = {
+            "centroid_method": "two_pt_centroid",
+            "points": {
+                "point1": "greenLED",
+                "point2": "redLED_C",
+            },
+            "speed_smoothing_std_dev": 0.100,
+            "sampling_rate": 40,
+        }
+        cls.insert1({"dlc_centroid_params_name": "default", "params": params})
+
     def insert1(self, key, **kwargs):
         """
         Check provided parameter dictionary to make sure
@@ -87,7 +103,6 @@ class DLCCentroidSelection(dj.Manual):
 
     definition = """
     -> DLCSmoothInterpCohort
-    -> DLCSmoothInterpParams
     -> DLCCentroidParams
     ---
     """
@@ -113,11 +128,27 @@ class DLCCentroid(dj.Computed):
         params = (DLCCentroidParams() & key).fetch1("params")
         centroid_method = params.pop("centroid_method")
         bodyparts_avail = cohort_entries.fetch("bodypart")
-        # Get params from Smooth Interp for speed calculation...
-        # Maybe just have user add these to params for CentroidParams?
-        smooth_interp_params = (DLCSmoothInterpParams() & key).fetch1("params")
-        speed_smoothing_std_dev = smooth_interp_params.pop("speed_smoothing_std_dev")
-        sampling_rate = smooth_interp_params.pop("sampling_rate")
+        si_params_names = np.unique(cohort_entries.fetch("dlc_si_params_name"))
+        sampling_rate_list = []
+        speed_smoothing_std_dev_list = []
+        for param_name in si_params_names:
+            smooth_interp_params = (
+                DLCSmoothInterpParams() & {"dlc_si_params_name": param_name}
+            ).fetch1("params")
+            sampling_rate_list.append(smooth_interp_params["sampling_rate"])
+            speed_smoothing_std_dev_list.append(
+                smooth_interp_params["speed_smoothing_std_dev"]
+            )
+        if len(np.unique(sampling_rate_list)) > 1:
+            raise ValueError(
+                "the sampling_rate for smooth interp params in cohort do not match"
+            )
+        if len(np.unique(speed_smoothing_std_dev_list)) > 1:
+            raise ValueError(
+                "the speed_smoothing_std_dev for smooth interp params in cohort do not match"
+            )
+        speed_smoothing_std_dev = np.unique(speed_smoothing_std_dev_list)
+        sampling_rate = np.unique(sampling_rate_list)
         # TODO, generalize key naming
         if centroid_method == "four_led_centroid":
             centroid_func = _key_to_func_dict[centroid_method]
@@ -232,7 +263,7 @@ class DLCCentroid(dj.Computed):
         position = pynwb.behavior.Position()
         velocity = pynwb.behavior.BehavioralTimeSeries()
         spatial_series = (RawPosition() & key).fetch_nwb()[0]["raw_position"]
-        METERS_PER_CM = 0.01  # IS this needed?
+        METERS_PER_CM = 0.01
         idx = pd.IndexSlice
         position.create_spatial_series(
             name="position",
