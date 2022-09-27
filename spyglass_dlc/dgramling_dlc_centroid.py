@@ -128,27 +128,8 @@ class DLCCentroid(dj.Computed):
         params = (DLCCentroidParams() & key).fetch1("params")
         centroid_method = params.pop("centroid_method")
         bodyparts_avail = cohort_entries.fetch("bodypart")
-        si_params_names = np.unique(cohort_entries.fetch("dlc_si_params_name"))
-        sampling_rate_list = []
-        speed_smoothing_std_dev_list = []
-        for param_name in si_params_names:
-            smooth_interp_params = (
-                DLCSmoothInterpParams() & {"dlc_si_params_name": param_name}
-            ).fetch1("params")
-            sampling_rate_list.append(smooth_interp_params["sampling_rate"])
-            speed_smoothing_std_dev_list.append(
-                smooth_interp_params["speed_smoothing_std_dev"]
-            )
-        if len(np.unique(sampling_rate_list)) > 1:
-            raise ValueError(
-                "the sampling_rate for smooth interp params in cohort do not match"
-            )
-        if len(np.unique(speed_smoothing_std_dev_list)) > 1:
-            raise ValueError(
-                "the speed_smoothing_std_dev for smooth interp params in cohort do not match"
-            )
-        speed_smoothing_std_dev = np.unique(speed_smoothing_std_dev_list)
-        sampling_rate = np.unique(sampling_rate_list)
+        speed_smoothing_std_dev = params.pop("speed_smoothing_std_dev")
+        sampling_rate = params.pop("sampling_rate")
         # TODO, generalize key naming
         if centroid_method == "four_led_centroid":
             centroid_func = _key_to_func_dict[centroid_method]
