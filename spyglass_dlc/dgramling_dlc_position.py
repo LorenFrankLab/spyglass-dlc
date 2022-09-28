@@ -62,6 +62,9 @@ class DLCSmoothInterpParams(dj.Manual):
             "interp_params": {
                 "likelihood_thresh": 0.95,
             },
+            "max_plausible_speed": 300.0,
+            "speed_smoothing_std_dev": 0.100,
+            "sampling_rate": 50.0,
         }
         cls.insert1(
             {"dlc_si_params_name": "default", "params": default_params},
@@ -103,8 +106,8 @@ class DLCSmoothInterp(dj.Computed):
     def make(self, key):
         # Get labels to smooth from Parameters table
         params = (DLCSmoothInterpParams() & key).fetch1("params")
-        max_plausible_speed = params.pop("max_plausible_speed")
-        speed_smoothing_std_dev = params.pop("speed_smoothing_std_dev")
+        max_plausible_speed = params.pop("max_plausible_speed", None)
+        speed_smoothing_std_dev = params.pop("speed_smoothing_std_dev", None)
         sampling_rate = params.pop("sampling_rate")
         # Get DLC output dataframe
         print("fetching Pose Estimation Dataframe")
