@@ -31,6 +31,13 @@ class DLCModelInput(dj.Manual):
         project_path = Path(key["project_path"])
         assert project_path.exists(), "project path does not exist"
         super().insert1(key, **kwargs)
+        DLCModelSource.insert_entry(
+            dlc_model_name=key["dlc_model_name"],
+            project_name=key["project_name"],
+            source="FromImport",
+            key=key,
+            skip_duplicates=True,
+        )
 
 
 @schema

@@ -83,7 +83,7 @@ class DLCModelTrainingSelection(dj.Manual):
     def insert1(self, key, **kwargs):
         training_id = key["training_id"]
         if training_id is None:
-            training_id = (dj.U().aggr(self, n="max(training_id)").fetch1("n") or 0) + 1
+            training_id = (dj.U().aggr(self & key, n="max(training_id)").fetch1("n") or 0) + 1
         key["training_id"] = training_id
         super().insert1(key, **kwargs)
 
@@ -217,4 +217,13 @@ class DLCModelTraining(dj.Computed):
 
         self.insert1(
             {**key, "latest_snapshot": latest_snapshot, "config_template": dlc_config}
+        )
+        from .dgramling_dlc_model import DLCModelSource
+
+        DLCModelSource.insert_entry(
+            dlc_model_name=key["dlc_model_name"],
+            project_name=key["project_name"],
+            source="FromUpstream",
+            key=key,
+            skip_duplicates=True,
         )
