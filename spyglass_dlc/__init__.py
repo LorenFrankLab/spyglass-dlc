@@ -28,7 +28,6 @@ from .dgramling_dlc_orient import (
 from .dgramling_dlc_selection import DLCPosSelection, DLCPos, DLCPosVideo
 from .dgramling_trodes_position import TrodesPosParams, TrodesPosSelection, TrodesPos
 from .dgramling_position import (
-    PosSelect,
     PosSource,
     IntervalPositionInfo,
     IntervalPositionInfoSelection,

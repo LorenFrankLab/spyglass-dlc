@@ -47,7 +47,7 @@ class DLCCentroidParams(dj.Manual):
                 "point2": "redLED_C",
             },
             "speed_smoothing_std_dev": 0.100,
-            "sampling_rate": 40,
+            "sampling_rate": 50,
         }
         cls.insert1({"dlc_centroid_params_name": "default", "params": params})
 

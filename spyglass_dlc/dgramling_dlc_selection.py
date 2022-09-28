@@ -121,6 +121,15 @@ class DLCPos(dj.Computed):
         )
 
         self.insert1(key)
+        from .dgramling_position import PosSource
+
+        key["source"] = "DLC"
+        dlc_key = key.copy()
+        valid_fields = PosSource().fetch().dtype.fields.keys()
+        entries_to_delete = [entry for entry in key.keys() if entry not in valid_fields]
+        for entry in entries_to_delete:
+            del key[entry]
+        PosSource().insert1(key=key, params=dlc_key, skip_duplicates=True)
 
     def fetch_nwb(self, *attrs, **kwargs):
         return fetch_nwb(
