@@ -1,6 +1,7 @@
 import datajoint as dj
 import pandas as pd
 import numpy as np
+from typing import Dict
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 from spyglass.common.common_interval import IntervalList
@@ -47,7 +48,7 @@ class PosSelect(dj.Manual):
 
 
 @schema
-class PosSource(dj.Computed):
+class PosSource(dj.Manual):
     """
     Table to identify source of Position Information from upstream options
     (e.g. DLC, Trodes, etc...) To add another upstream option, a new Part table
@@ -56,7 +57,9 @@ class PosSource(dj.Computed):
     """
 
     definition = """
-    -> PosSelect
+    -> IntervalList
+    source: enum("DLC", "Trodes")
+    position_id: int
     ---
     """
 
@@ -90,12 +93,24 @@ class PosSource(dj.Computed):
         velocity_object_id : varchar(80)
         """
 
-    def make(self, key):
-        self.insert1(key)
-        source, dlc_key = (PosSelect & key).fetch1("source", "dlc_params")
+    def insert1(self, key, params: Dict = None, **kwargs):
+        position_id = key.get("position_id", None)
+        if position_id is None:
+            key["position_id"] = (
+                dj.U().aggr(self, n="max(position_id)").fetch1("n") or 0
+            ) + 1
+        else:
+            id = (self & key).fetch("position_id")
+            if len(id) > 0:
+                position_id = max(id) + 1
+            else:
+                position_id = max(0, position_id)
+            key["position_id"] = position_id
+        super().insert1(key, **kwargs)
+        source = key["source"]
         part_table = getattr(self, f"{source}Pos")
         table_query = (
-            dj.FreeTable(dj.conn(), full_table_name=part_table.parents()[1]) & dlc_key
+            dj.FreeTable(dj.conn(), full_table_name=part_table.parents()[1]) & params
         )
         (
             analysis_file_name,
@@ -115,7 +130,7 @@ class PosSource(dj.Computed):
                 "position_object_id": position_object_id,
                 "orientation_object_id": orientation_object_id,
                 "velocity_object_id": velocity_object_id,
-                **dlc_key,
+                **params,
             },
         )
 
