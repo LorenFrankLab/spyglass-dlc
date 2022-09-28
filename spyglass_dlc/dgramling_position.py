@@ -13,41 +13,6 @@ schema = dj.schema("dgramling_position")
 
 
 @schema
-class PosSelect(dj.Manual):
-    """
-    Table to specify which entry from upstream pipeline should be added to PosSource
-    Allows for multiple entries per epoch per source with incrementing position_id key
-    If specifying DLC as upstream, set dlc_params foreign key with dict of keys necessary
-    to query DLCPos
-    """
-
-    # This would limit the user to only one entry per interval in IntervalPosInfo
-    definition = """
-    -> IntervalList
-    source: enum("DLC", "Trodes")
-    position_id: int
-    ---
-    dlc_params = NULL: longblob     # dictionary with primary keys of upstream DLC entries
-    """
-
-    def insert1(self, key, **kwargs):
-        # TODO: not sure this logic with if/else makes sense...
-        position_id = key.get("position_id", None)
-        if position_id is None:
-            key["position_id"] = (
-                dj.U().aggr(self, n="max(position_id)").fetch1("n") or 0
-            ) + 1
-        else:
-            id = (self & key).fetch("position_id")
-            if len(id) > 0:
-                position_id = max(id) + 1
-            else:
-                position_id = max(0, position_id)
-            key["position_id"].update(position_id)
-        super().insert1(key, **kwargs)
-
-
-@schema
 class PosSource(dj.Manual):
     """
     Table to identify source of Position Information from upstream options
@@ -97,7 +62,7 @@ class PosSource(dj.Manual):
         position_id = key.get("position_id", None)
         if position_id is None:
             key["position_id"] = (
-                dj.U().aggr(self, n="max(position_id)").fetch1("n") or 0
+                dj.U().aggr(self & key, n="max(position_id)").fetch1("n") or 0
             ) + 1
         else:
             id = (self & key).fetch("position_id")
