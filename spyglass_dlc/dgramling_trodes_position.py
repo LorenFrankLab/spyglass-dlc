@@ -1,8 +1,13 @@
+import os
+import glob
 import bottleneck
 import numpy as np
 import pandas as pd
 import datajoint as dj
 import pynwb
+import cv2
+from tqdm import tqdm as tqdm
+from pathlib import Path
 import pynwb.behavior
 from position_tools import (
     get_angle,
@@ -15,7 +20,8 @@ from position_tools import (
 from position_tools.core import gaussian_smooth
 from spyglass.common.dj_helper_fn import fetch_nwb
 from spyglass.common.common_nwbfile import AnalysisNwbfile
-from spyglass.common.common_behav import RawPosition
+from spyglass.common.common_behav import RawPosition, VideoFile
+from .dlc_utils import get_video_path, check_videofile
 
 schema = dj.schema("dgramling_trodes_position")
 
@@ -93,7 +99,11 @@ class TrodesPos(dj.Computed):
         velocity = pynwb.behavior.BehavioralTimeSeries()
 
         METERS_PER_CM = 0.01
-
+        raw_pos_df = pd.DataFrame(
+            data=raw_position["raw_position"].data,
+            index=pd.Index(raw_position["raw_position"].timestamps, name="time"),
+            columns=raw_position["raw_position"].description.split(", "),
+        )
         try:
             # calculate the processed position
             spatial_series = raw_position["raw_position"]
@@ -146,7 +156,7 @@ class TrodesPos(dj.Computed):
                 name="video_frame_ind",
                 unit="index",
                 timestamps=position_info["time"],
-                data=raw_position["raw_position"].data,
+                data=raw_pos_df.video_frame_ind.to_numpy(),
                 description="video_frame_ind",
                 comments=spatial_series.comments,
             )
@@ -179,8 +189,8 @@ class TrodesPos(dj.Computed):
             del key[entry]
         PosSource().insert1(key=key, params=trodes_key, skip_duplicates=True)
 
+    @staticmethod
     def calculate_position_info_from_spatial_series(
-        self,
         spatial_series,
         max_LED_separation,
         max_plausible_speed,
@@ -197,7 +207,11 @@ class TrodesPos(dj.Computed):
 
         # Get spatial series properties
         time = np.asarray(spatial_series.timestamps)  # seconds
-        position = np.asarray(spatial_series.data)  # meters
+        position = np.asarray(
+            pd.DataFrame(
+                spatial_series.data, columns=spatial_series.description.split(", ")
+            ).loc[:, ["xloc", "yloc", "xloc2", "yloc2"]]
+        )  # meters
 
         # remove NaN times
         is_nan_time = np.isnan(time)
@@ -374,3 +388,203 @@ class TrodesPos(dj.Computed):
             columns=COLUMNS,
             index=index,
         )
+
+
+@schema
+class TrodesPosVideo(dj.Computed):
+    """Creates a video of the computed head position and orientation as well as
+    the original LED positions overlayed on the video of the animal.
+
+    Use for debugging the effect of position extraction parameters."""
+
+    definition = """
+    -> TrodesPos
+    ---
+    """
+
+    def make(self, key):
+        M_TO_CM = 100
+
+        print("Loading position data...")
+        raw_position_df = (
+            RawPosition()
+            & {
+                "nwb_file_name": key["nwb_file_name"],
+                "interval_list_name": key["interval_list_name"],
+            }
+        ).fetch1_dataframe()
+        position_info_df = (TrodesPos() & key).fetch1_dataframe()
+
+        print("Loading video data...")
+        epoch = (
+            int(
+                key["interval_list_name"]
+                .replace("pos ", "")
+                .replace(" valid times", "")
+            )
+            + 1
+        )
+
+        video_path, video_filename, meters_per_pixel, video_time = get_video_path(
+            {"nwb_file_name": key["nwb_file_name"], "epoch": epoch}
+        )
+        video_dir = os.path.dirname(video_path) + "/"
+        video_path = check_videofile(
+            video_path=video_dir, video_filename=video_filename
+        )[0].as_posix()
+        nwb_base_filename = key["nwb_file_name"].replace(".nwb", "")
+        current_dir = Path(os.getcwd())
+        output_video_filename = f"{current_dir.as_posix()}/{nwb_base_filename}_{epoch:02d}_{key['trodes_pos_params_name']}.mp4"
+        centroids = {
+            "red": np.asarray(raw_position_df[["xloc", "yloc"]]),
+            "green": np.asarray(raw_position_df[["xloc2", "yloc2"]]),
+        }
+        position_mean = np.asarray(position_info_df[["position_x", "position_y"]])
+        orientation_mean = np.asarray(position_info_df[["orientation"]])
+        position_time = np.asarray(position_info_df.index)
+        cm_per_pixel = meters_per_pixel * M_TO_CM
+
+        print("Making video...")
+        self.make_video(
+            video_path,
+            centroids,
+            position_mean,
+            orientation_mean,
+            video_time,
+            position_time,
+            output_video_filename=output_video_filename,
+            cm_to_pixels=cm_per_pixel,
+            disable_progressbar=False,
+        )
+
+    @staticmethod
+    def convert_to_pixels(data, frame_size, cm_to_pixels=1.0):
+        """Converts from cm to pixels and flips the y-axis.
+        Parameters
+        ----------
+        data : ndarray, shape (n_time, 2)
+        frame_size : array_like, shape (2,)
+        cm_to_pixels : float
+        Returns
+        -------
+        converted_data : ndarray, shape (n_time, 2)
+        """
+        return data / cm_to_pixels
+
+    @staticmethod
+    def fill_nan(variable, video_time, variable_time):
+        video_ind = np.digitize(variable_time, video_time[1:])
+
+        n_video_time = len(video_time)
+        try:
+            n_variable_dims = variable.shape[1]
+            filled_variable = np.full((n_video_time, n_variable_dims), np.nan)
+        except IndexError:
+            filled_variable = np.full((n_video_time,), np.nan)
+        filled_variable[video_ind] = variable
+
+        return filled_variable
+
+    def make_video(
+        self,
+        video_filename,
+        centroids,
+        position_mean,
+        orientation_mean,
+        video_time,
+        position_time,
+        output_video_filename="output.mp4",
+        cm_to_pixels=1.0,
+        disable_progressbar=False,
+        arrow_radius=15,
+        circle_radius=8,
+    ):
+        RGB_PINK = (234, 82, 111)
+        RGB_YELLOW = (253, 231, 76)
+        RGB_WHITE = (255, 255, 255)
+
+        video = cv2.VideoCapture(video_filename)
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        frame_size = (int(video.get(3)), int(video.get(4)))
+        frame_rate = video.get(5)
+        n_frames = int(orientation_mean.shape[0])
+
+        out = cv2.VideoWriter(
+            output_video_filename, fourcc, frame_rate, frame_size, True
+        )
+
+        centroids = {
+            color: self.fill_nan(data, video_time, position_time)
+            for color, data in centroids.items()
+        }
+        position_mean = self.fill_nan(position_mean, video_time, position_time)
+        orientation_mean = self.fill_nan(orientation_mean, video_time, position_time)
+
+        for time_ind in tqdm(
+            range(n_frames - 1), desc="frames", disable=disable_progressbar
+        ):
+            is_grabbed, frame = video.read()
+            if is_grabbed:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+                red_centroid = centroids["red"][time_ind]
+                green_centroid = centroids["green"][time_ind]
+
+                position = position_mean[time_ind]
+                position = self.convert_to_pixels(position, frame_size, cm_to_pixels)
+                orientation = orientation_mean[time_ind]
+
+                if np.all(~np.isnan(red_centroid)):
+                    cv2.circle(
+                        img=frame,
+                        center=tuple(red_centroid.astype(int)),
+                        radius=circle_radius,
+                        color=RGB_YELLOW,
+                        thickness=-1,
+                        shift=cv2.CV_8U,
+                    )
+
+                if np.all(~np.isnan(green_centroid)):
+                    cv2.circle(
+                        img=frame,
+                        center=tuple(green_centroid.astype(int)),
+                        radius=circle_radius,
+                        color=RGB_PINK,
+                        thickness=-1,
+                        shift=cv2.CV_8U,
+                    )
+
+                if np.all(~np.isnan(position)) & np.all(~np.isnan(orientation)):
+                    arrow_tip = (
+                        int(position[0] + arrow_radius * np.cos(orientation)),
+                        int(position[1] + arrow_radius * np.sin(orientation)),
+                    )
+                    cv2.arrowedLine(
+                        img=frame,
+                        pt1=tuple(position.astype(int)),
+                        pt2=arrow_tip,
+                        color=RGB_WHITE,
+                        thickness=4,
+                        line_type=8,
+                        shift=cv2.CV_8U,
+                        tipLength=0.25,
+                    )
+
+                if np.all(~np.isnan(position)):
+                    cv2.circle(
+                        img=frame,
+                        center=tuple(position.astype(int)),
+                        radius=circle_radius,
+                        color=RGB_WHITE,
+                        thickness=-1,
+                        shift=cv2.CV_8U,
+                    )
+
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                out.write(frame)
+            else:
+                break
+
+        video.release()
+        out.release()
+        cv2.destroyAllWindows()

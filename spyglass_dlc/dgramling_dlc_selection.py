@@ -198,7 +198,8 @@ class DLCPosVideo(dj.Computed):
         pose_estimation_key = {
             "nwb_file_name": key["nwb_file_name"],
             "interval_list_name": key["interval_list_name"],
-            "dlc_si_cohort_selection_name": key["dlc_si_cohort_centroid"],
+            "dlc_model_name": key["dlc_model_name"],
+            "dlc_model_params_name": key["dlc_model_params_name"],
         }
         pose_estimation_params, video_filename, output_dir = (
             DLCPoseEstimationSelection() & pose_estimation_key
@@ -363,7 +364,7 @@ class DLCPosVideo(dj.Computed):
             crop_offset_y = crop[2]
         frame_ind = 0
         ### TODO: ------ DELETE THIS------- #####
-        n_frames = int(n_frames // 15)
+        # n_frames = int(n_frames // 15)
         with plt.style.context("dark_background"):
             # Set up plots
             fig, axes = plt.subplots(
