@@ -6,7 +6,7 @@ Position pipeline to incorporate DeepLabCut into Spyglass
 ### Developer Installation
 1. Install miniconda (or anaconda) if it isn't already installed.
 2. INSTALL CORRECT DRIVER for GPU, see https://stackoverflow.com/questions/30820513/what-is-the-correct-version-of-cuda-for-my-nvidia-driver/30820690
-3. git clone https://github.com/LorenFrankLab/spyglass-dlc.git
+3. ```git clone https://github.com/LorenFrankLab/spyglass-dlc.git```
 4. Setup editiable package with dependencies
 ```bash
 cd spyglass-dlc
