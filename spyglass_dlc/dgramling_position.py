@@ -201,6 +201,8 @@ class PositionVideoSelection(dj.Manual):
     definition = """
     nwb_file_name       : varchar(255)                 # name of the NWB file
     interval_list_name  : varchar(200)                 # descriptive name of this interval list
+    trodes_position_id  : int
+    dlc_position_id     : int
     plot                : enum("DLC", "Trodes", "All") # Which position info to overlay on video file
     output_dir          : varchar(255)                 # directory where to save output video
     ---
@@ -237,6 +239,7 @@ class PositionVideo(dj.Computed):
                     "nwb_file_name": key["nwb_file_name"],
                     "interval_list_name": key["interval_list_name"],
                     "source": "DLC",
+                    "position_id": key["dlc_position_id"],
                 }
             ).fetch1_dataframe()
         elif key["plot"] == "Trodes":
@@ -246,6 +249,7 @@ class PositionVideo(dj.Computed):
                     "nwb_file_name": key["nwb_file_name"],
                     "interval_list_name": key["interval_list_name"],
                     "source": "Trodes",
+                    "position_id": key["trodes_position_id"],
                 }
             ).fetch1_dataframe()
         elif key["plot"] == "All":
@@ -256,6 +260,7 @@ class PositionVideo(dj.Computed):
                         "nwb_file_name": key["nwb_file_name"],
                         "interval_list_name": key["interval_list_name"],
                         "source": "DLC",
+                        "position_id": key["dlc_position_id"],
                     }
                 )
                 .fetch1_dataframe()
@@ -268,6 +273,7 @@ class PositionVideo(dj.Computed):
                         "nwb_file_name": key["nwb_file_name"],
                         "interval_list_name": key["interval_list_name"],
                         "source": "Trodes",
+                        "position_id": key["trodes_position_id"],
                     }
                 )
                 .fetch1_dataframe()
@@ -293,7 +299,10 @@ class PositionVideo(dj.Computed):
             {"nwb_file_name": key["nwb_file_name"], "epoch": epoch}
         )
         video_dir = os.path.dirname(video_path) + "/"
-        video_frame_inds = pos_df["video_frame_ind_DLC"].astype(int).to_numpy()
+        video_frame_col_name = [
+            col for col in pos_df.columns if "video_frame_ind" in col
+        ]
+        video_frame_inds = pos_df[video_frame_col_name[0]].astype(int).to_numpy()
         if key["plot"] in ["DLC", "All"]:
             dlc_model_name = (PosSource.DLCPos & key).fetch1("dlc_model_name")
             video_path = (
