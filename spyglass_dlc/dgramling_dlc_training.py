@@ -27,7 +27,7 @@ class DLCModelTrainingParams(dj.Lookup):
     skipped_parameters = ("project_path", "video_sets")
 
     @classmethod
-    def insert_new_params(cls, paramset_name: str, params: dict):
+    def insert_new_params(cls, paramset_name: str, params: dict, **kwargs):
         """
         Insert a new set of training parameters into dlc.TrainingParamSet.
 
@@ -65,7 +65,9 @@ class DLCModelTrainingParams(dj.Lookup):
                     f"A param set with name: {paramset_name} already exists"
                 )
         else:
-            cls.insert1(param_dict)  # if duplicate, will raise duplicate error
+            cls.insert1(
+                param_dict, **kwargs
+            )  # if duplicate, will raise duplicate error
             # if this will raise duplicate error, why is above check needed? @datajoint
 
 
@@ -83,7 +85,9 @@ class DLCModelTrainingSelection(dj.Manual):
     def insert1(self, key, **kwargs):
         training_id = key["training_id"]
         if training_id is None:
-            training_id = (dj.U().aggr(self & key, n="max(training_id)").fetch1("n") or 0) + 1
+            training_id = (
+                dj.U().aggr(self & key, n="max(training_id)").fetch1("n") or 0
+            ) + 1
         key["training_id"] = training_id
         super().insert1(key, **kwargs)
 
@@ -161,34 +165,6 @@ class DLCModelTraining(dj.Computed):
         for k in ["shuffle", "trainingsetindex", "maxiters"]:
             if k in train_network_kwargs:
                 train_network_kwargs[k] = int(train_network_kwargs[k])
-        # TODO: THIS PART IS A LITTLE SKETCH and broken and edits something that maybe shouldn't be changed
-        # pose_yaml_path = list(
-        #     Path(
-        #         project_path
-        #         / get_model_folder(
-        #             trainFraction=dlc_config["train_fraction"],
-        #             shuffle=dlc_config["shuffle"],
-        #             cfg=dlc_config,
-        #             modelprefix=dlc_config["modelprefix"],
-        #         )
-        #         / "train"
-        #     ).glob("*.y*ml")
-        # )
-        # assert (
-        #     len(pose_yaml_path) == 1
-        # ), f"Found more yaml files than expected: {len(pose_yaml_path)}"
-        # pose_yaml_path = pose_yaml_path[0]
-        # if pose_yaml_path.exists():
-        #     username = getpass.getuser()
-        #     pose_config = dlc_reader.read_yaml(pose_yaml_path)
-        #     if username not in pose_config["init_weights"]:
-        #         model_path, _ = auxfun_models.Check4weights(
-        #             pose_config["net_type"],
-        #             Path(get_deeplabcut_path()),
-        #             dlc_config["shuffle"],
-        #         )
-        #         pose_config.update({'init_weights': model_path'})
-        #         dlc_reader.save_yaml(pose_yaml_path, pose_config)
         try:
             train_network(dlc_cfg_filepath, **train_network_kwargs)
         except KeyboardInterrupt:  # Instructions indicate to train until interrupt
@@ -220,8 +196,9 @@ class DLCModelTraining(dj.Computed):
         )
         from .dgramling_dlc_model import DLCModelSource
 
+        dlc_model_name = f"{key['project_name']}_{key['dlc_training_params_name']}_{key['training_id']:02d}"
         DLCModelSource.insert_entry(
-            dlc_model_name=key["dlc_model_name"],
+            dlc_model_name=dlc_model_name,
             project_name=key["project_name"],
             source="FromUpstream",
             key=key,

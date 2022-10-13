@@ -7,6 +7,7 @@ import pwd
 import grp
 from collections import abc
 from typing import Union
+import numpy as np
 import datajoint as dj
 
 
@@ -168,13 +169,15 @@ def get_video_path(key):
     video_filepath = nwb_video.external_file[0]
     video_dir = os.path.dirname(video_filepath) + "/"
     video_filename = video_filepath.split(video_dir)[-1]
+    meters_per_pixel = nwb_video.device.meters_per_pixel
+    timestamps = np.asarray(nwb_video.timestamps)
     io.close()
-    return video_dir, video_filename
+    return video_dir, video_filename, meters_per_pixel, timestamps
 
 
 def check_videofile(
     video_path: Union[str, pathlib.PosixPath],
-    output_path: Union[str, pathlib.PosixPath],
+    output_path: Union[str, pathlib.PosixPath] = os.getenv("DLC_VIDEO_PATH"),
     video_filename: str = None,
     video_filetype: str = "h264",
 ):

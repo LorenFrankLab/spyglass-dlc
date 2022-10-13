@@ -40,7 +40,7 @@ class DLCPoseEstimationSelection(dj.Manual):
         # Or make key include epoch in and of itself instead of interval_list_name
         if ".h264" in video_filename:
             video_filename = video_filename.split(".")[0]
-        output_dir = Path("/nimbus/deeplabcut/output") / Path(
+        output_dir = Path(os.getenv("DLC_OUTPUT_PATH")) / Path(
             f"{video_filename}_model_" + key["dlc_model_name"].replace(" ", "-")
         )
         if not os.path.exists(output_dir):
@@ -70,10 +70,10 @@ class DLCPoseEstimationSelection(dj.Manual):
         # TODO: figure out if a separate video_key is needed without portions of key that refer to model
         from .dlc_utils import get_video_path, check_videofile
 
-        video_path, video_filename = get_video_path(key)
+        video_path, video_filename, _, _ = get_video_path(key)
         output_dir = cls.infer_output_dir(key, video_filename=video_filename)
         video_dir = os.path.dirname(video_path) + "/"
-        video_path = check_videofile(video_dir, output_dir, video_filename)[0]
+        video_path = check_videofile(video_dir, video_filename)[0]
         cls.insert1(
             {
                 **key,
@@ -218,6 +218,11 @@ def convert_to_cm(df, meters_to_pixels):
 
 def add_timestamps(df: pd.DataFrame, raw_pos_df: pd.DataFrame) -> pd.DataFrame:
 
+    raw_pos_df = raw_pos_df.drop(
+        columns=[
+            column for column in raw_pos_df.columns if column not in ["video_frame_ind"]
+        ]
+    )
     raw_pos_df["time"] = raw_pos_df.index
     raw_pos_df.set_index("video_frame_ind", inplace=True)
     df = df.join(raw_pos_df)

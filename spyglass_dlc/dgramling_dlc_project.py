@@ -123,7 +123,7 @@ class DLCProject(dj.Manual):
             new_proj_dir = shutil.copytree(
                 src=project_path, dst=f"{dlc_project_path}/{project_dirname}/"
             )
-            new_config_path = Path(new_proj_dir / "config.yaml")
+            new_config_path = Path(f"{new_proj_dir}/config.yaml")
             assert new_config_path.exists(), "config.yaml did not copy to new location"
             config_path = new_config_path
             add_to_config(config_path, **{"project_path": new_proj_dir})
@@ -153,8 +153,8 @@ class DLCProject(dj.Manual):
         lab_team: str,
         frames_per_video: int,
         video_list: List,
-        project_directory: str = os.environ["DLC_PROJECT_PATH"],
-        output_path: str = os.environ["DLC_VIDEO_PATH"],
+        project_directory: str = os.getenv("DLC_PROJECT_PATH"),
+        output_path: str = os.getenv("DLC_VIDEO_PATH"),
         set_permissions=False,
         **kwargs,
     ):
@@ -190,6 +190,7 @@ class DLCProject(dj.Manual):
         skeleton_node = None
         # If dict, assume of form {'nwb_file_name': nwb_file_name, 'epoch': epoch}
         # and pass to get_video_path to reference VideoFile table for path
+
         if all(isinstance(n, Dict) for n in video_list):
             videos_to_convert = [get_video_path(video_key) for video_key in video_list]
             videos = [
@@ -197,7 +198,7 @@ class DLCProject(dj.Manual):
                     video_path=video[0],
                     output_path=output_path,
                     video_filename=video[1],
-                )
+                )[0].as_posix()
                 for video in videos_to_convert
             ]
         # If not dict, assume list of video file paths that may or may not need to be converted
@@ -325,14 +326,14 @@ class DLCProject(dj.Manual):
 
         label_frames(config_path)
 
-    def check_labels(self, key):
+    def check_labels(self, key, **kwargs):
         """Convenience function to check labels on
         previously extracted and labeled frames
         """
         config_path = (self & key).fetch1("config_path")
         from deeplabcut import check_labels
 
-        check_labels(config_path)
+        check_labels(config_path, **kwargs)
 
 
 def add_to_config(config, bodyparts: List = None, skeleton_node: str = None, **kwargs):
@@ -365,6 +366,8 @@ def add_to_config(config, bodyparts: List = None, skeleton_node: str = None, **k
         else:
             bodypart_skeleton = list(combinations(led_parts, 2))
         other_parts = list(set(bodyparts) - set(led_parts))
+        for ind, part in enumerate(other_parts):
+            other_parts[ind] = [part, part]
         bodypart_skeleton.append(other_parts)
         data["skeleton"] = bodypart_skeleton
     for kwarg, val in kwargs.items():

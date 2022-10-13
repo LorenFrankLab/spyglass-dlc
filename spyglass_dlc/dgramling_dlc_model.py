@@ -24,7 +24,6 @@ class DLCModelInput(dj.Manual):
     ---
     project_path         : varchar(255) # Path to project directory
     """
-    # TODO: brainstorm what actually lives in this function
 
     def insert1(self, key, **kwargs):
 
@@ -80,7 +79,14 @@ class DLCModelSource(dj.Manual):
         **kwargs,
     ):
 
-        cls.insert1({"dlc_model_name": dlc_model_name, "source": source}, **kwargs)
+        cls.insert1(
+            {
+                "dlc_model_name": dlc_model_name,
+                "project_name": project_name,
+                "source": source,
+            },
+            **kwargs,
+        )
         part_table = getattr(cls, source)
         table_query = dj.FreeTable(
             dj.conn(), full_table_name=part_table.parents()[-1]
@@ -105,14 +111,23 @@ class DLCModelParams(dj.Manual):
     params: longblob
     """
 
-    def insert_default(self, **kwargs):
+    @classmethod
+    def insert_default(cls, **kwargs):
         params = {
             "params": {},
             "shuffle": 1,
             "trainingsetindex": 0,
             "model_prefix": "",
         }
-        self.insert1({"dlc_model_params_name": "default", "params": params}, **kwargs)
+        cls.insert1({"dlc_model_params_name": "default", "params": params}, **kwargs)
+
+    @classmethod
+    def get_default(cls):
+        default = (cls & {"dlc_model_params_name": "default"}).fetch1()
+        if not len(default > 0):
+            cls().insert_default(skip_duplicates=True)
+            default = (cls & {"dlc_model_params_name": "default"}).fetch1()
+        return default
 
 
 @schema
@@ -154,7 +169,7 @@ class DLCModel(dj.Computed):
 
         from deeplabcut.utils.auxiliaryfunctions import GetScorerName
 
-        model_name, table_source = (DLCModelSource & key).fetch1().values()
+        model_name, _, table_source = (DLCModelSource & key).fetch1().values()
         SourceTable = getattr(DLCModelSource, table_source)
         params = (DLCModelParams & key).fetch1("params")
         project_path = SourceTable.fetch1("project_path")
@@ -221,16 +236,15 @@ class DLCModel(dj.Computed):
             "project_path": project_path,
             "config_template": dlc_config,
         }
+        part_key = key.copy()
         key.update(model_dict)
-
         # ---- Save DJ-managed config ----
         _ = dlc_reader.save_yaml(project_path, dlc_config)
 
         # ____ Insert into table ----
         self.insert1(key)
         self.BodyPart.insert(
-            (model_name, key["dlc_model_params_name"], bp)
-            for bp in dlc_config["bodyparts"]
+            {**part_key, "bodypart": bp} for bp in dlc_config["bodyparts"]
         )
 
 
