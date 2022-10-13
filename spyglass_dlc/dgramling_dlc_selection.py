@@ -261,6 +261,12 @@ class DLCPosVideo(dj.Computed):
             bodypart: pose_estimation_df.loc[:, idx[bodypart, ("x", "y")]].to_numpy()
             for bodypart in pose_estimation_df.columns.levels[0]
         }
+        likelihoods = {
+            bodypart: pose_estimation_df.loc[
+                :, idx[bodypart, ("likelihood")]
+            ].to_numpy()
+            for bodypart in pose_estimation_df.columns.levels[0]
+        }
         position_mean = np.asarray(position_info_df[["position_x", "position_y"]])
         orientation_mean = np.asarray(position_info_df[["orientation"]])
         position_time = np.asarray(position_info_df.index)
@@ -270,6 +276,7 @@ class DLCPosVideo(dj.Computed):
         self.make_video(
             video_filename,
             centroids,
+            likelihoods,
             position_mean,
             orientation_mean,
             position_time,
@@ -312,6 +319,7 @@ class DLCPosVideo(dj.Computed):
         self,
         video_filename,
         centroids,
+        likelihoods,
         position_mean,
         orientation_mean,
         position_time,
@@ -333,6 +341,7 @@ class DLCPosVideo(dj.Computed):
         # Set up formatting for the movie files
 
         window_size = 501
+        plot_likelihood = True
 
         window_ind = np.arange(window_size) - window_size // 2
         # Get video frames
@@ -363,8 +372,6 @@ class DLCPosVideo(dj.Computed):
             crop_offset_x = crop[0]
             crop_offset_y = crop[2]
         frame_ind = 0
-        ### TODO: ------ DELETE THIS------- #####
-        # n_frames = int(n_frames // 15)
         with plt.style.context("dark_background"):
             # Set up plots
             fig, axes = plt.subplots(
@@ -419,10 +426,6 @@ class DLCPosVideo(dj.Computed):
             x_left, x_right = axes[0].get_xlim()
             y_low, y_high = axes[0].get_ylim()
             axes[0].set_aspect(abs((x_right - x_left) / (y_low - y_high)) * ratio)
-            #     axes[0].set_xlim(position_info[position_name[0]].min() - 10,
-            #                      position_info[position_name[0]].max() + 10)
-            #     axes[0].set_ylim(position_info[position_name[1]].min() - 10,
-            #                      position_info[position_name[1]].max() + 10)
             axes[0].spines["top"].set_color("black")
             axes[0].spines["right"].set_color("black")
             time_delta = pd.Timedelta(
@@ -444,56 +447,33 @@ class DLCPosVideo(dj.Computed):
 
             #     axes[0].add_artist(scalebar)
             axes[0].axis("off")
-            # if plot_likelihood:
-            #     (redL_likelihood,) = axes[1].plot(
-            #         [],
-            #         [],
-            #         color="yellow",
-            #         linewidth=1,
-            #         animated=True,
-            #         clip_on=False,
-            #         label="red_left",
-            #     )
-            #     (redR_likelihood,) = axes[1].plot(
-            #         [],
-            #         [],
-            #         color="blue",
-            #         linewidth=1,
-            #         animated=True,
-            #         clip_on=False,
-            #         label="red_right",
-            #     )
-            #     (green_likelihood,) = axes[1].plot(
-            #         [],
-            #         [],
-            #         color="green",
-            #         linewidth=1,
-            #         animated=True,
-            #         clip_on=False,
-            #         label="green",
-            #     )
-            #     (redC_likelihood,) = axes[1].plot(
-            #         [],
-            #         [],
-            #         color="red",
-            #         linewidth=1,
-            #         animated=True,
-            #         clip_on=False,
-            #         label="red_center",
-            #     )
-            #     axes[1].set_ylim((0.0, 1))
-            #     axes[1].set_xlim(
-            #         (
-            #             window_ind[0] / sampling_frequency,
-            #             window_ind[-1] / sampling_frequency,
-            #         )
-            #     )
-            #     axes[1].set_xlabel("Time [s]")
-            #     axes[1].set_ylabel("Likelihood")
-            #     axes[1].set_facecolor("black")
-            #     axes[1].spines["top"].set_color("black")
-            #     axes[1].spines["right"].set_color("black")
-            #     axes[1].legend(loc="upper right", fontsize=4)
+            if plot_likelihood:
+                likelihood_objs = {
+                    bodypart: axes[1].plot(
+                        [],
+                        [],
+                        color=color,
+                        linewidth=1,
+                        animated=True,
+                        clip_on=False,
+                        label=bodypart,
+                    )[0]
+                    for color, bodypart in zip(color_swatch, likelihoods.keys())
+                }
+                axes[1].set_ylim((0.0, 1))
+                print(f"frame_rate: {frame_rate}")
+                axes[1].set_xlim(
+                    (
+                        window_ind[0] / frame_rate,
+                        window_ind[-1] / frame_rate,
+                    )
+                )
+                axes[1].set_xlabel("Time [s]")
+                axes[1].set_ylabel("Likelihood")
+                axes[1].set_facecolor("black")
+                axes[1].spines["top"].set_color("black")
+                axes[1].spines["right"].set_color("black")
+                axes[1].legend(loc="upper right", fontsize=4)
             progress_bar = tqdm(leave=True, position=0)
             progress_bar.reset(total=n_frames)
 
@@ -562,30 +542,21 @@ class DLCPosVideo(dj.Computed):
                         - pd.to_datetime(position_time[0] * 1e9, unit="ns")
                     ).total_seconds()
                     title.set_text(f"time = {time_delta:3.4f}s\n frame = {time_ind}")
-                # redL_likelihood.set_data(
-                #     window_ind / sampling_frequency,
-                #     np.asarray(
-                #         interp_df["redLED_L", "likelihood"].iloc[time_ind + window_ind]
-                #     ),
-                # )
-                # redR_likelihood.set_data(
-                #     window_ind / sampling_frequency,
-                #     np.asarray(
-                #         interp_df["redLED_R", "likelihood"].iloc[time_ind + window_ind]
-                #     ),
-                # )
-                # green_likelihood.set_data(
-                #     window_ind / sampling_frequency,
-                #     np.asarray(
-                #         interp_df["greenLED", "likelihood"].iloc[time_ind + window_ind]
-                #     ),
-                # )
-                # redC_likelihood.set_data(
-                #     window_ind / sampling_frequency,
-                #     np.asarray(
-                #         interp_df["redLED_C", "likelihood"].iloc[time_ind + window_ind]
-                #     ),
-                # )
+                    likelihood_inds = pos_ind + window_ind
+                    neg_inds = np.where(likelihood_inds < 0)[0]
+                    over_inds = np.where(
+                        likelihood_inds
+                        > len(likelihoods[list(likelihood_objs.keys())[0]])
+                    )[0]
+                    if len(neg_inds) > 0:
+                        likelihood_inds[neg_inds] = 0
+                    if len(over_inds) > 0:
+                        likelihood_inds[neg_inds] = -1
+                    for bodypart in likelihood_objs.keys():
+                        likelihood_objs[bodypart].set_data(
+                            window_ind / frame_rate,
+                            np.asarray(likelihoods[bodypart][likelihood_inds]),
+                        )
                 progress_bar.update()
 
                 return (
