@@ -73,7 +73,7 @@ class DLCPoseEstimationSelection(dj.Manual):
         video_path, video_filename, _, _ = get_video_path(key)
         output_dir = cls.infer_output_dir(key, video_filename=video_filename)
         video_dir = os.path.dirname(video_path) + "/"
-        video_path = check_videofile(video_dir, video_filename)[0]
+        video_path = check_videofile(video_path=video_dir, video_filename=video_filename)[0]
         cls.insert1(
             {
                 **key,
@@ -146,11 +146,12 @@ class DLCPoseEstimation(dj.Computed):
         )
 
         print("getting raw position")
+        interval_list_name = f"pos {key['epoch']-1} valid times"
         raw_position = (
             RawPosition()
             & {
                 "nwb_file_name": key["nwb_file_name"],
-                "interval_list_name": key["interval_list_name"],
+                "interval_list_name": interval_list_name,
             }
         ).fetch_nwb()[0]
         raw_pos_df = pd.DataFrame(
