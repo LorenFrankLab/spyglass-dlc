@@ -47,7 +47,6 @@ class DLCCentroidParams(dj.Manual):
                 "point2": "redLED_C",
             },
             "speed_smoothing_std_dev": 0.100,
-            "sampling_rate": 50,
         }
         cls.insert1({"dlc_centroid_params_name": "default", "params": params})
 
@@ -129,7 +128,6 @@ class DLCCentroid(dj.Computed):
         centroid_method = params.pop("centroid_method")
         bodyparts_avail = cohort_entries.fetch("bodypart")
         speed_smoothing_std_dev = params.pop("speed_smoothing_std_dev")
-        sampling_rate = params.pop("sampling_rate")
         # TODO, generalize key naming
         if centroid_method == "four_led_centroid":
             centroid_func = _key_to_func_dict[centroid_method]
@@ -215,7 +213,8 @@ class DLCCentroid(dj.Computed):
             },
             axis=1,
         )
-
+        dt = np.median(np.diff(pos_df.index.to_numpy()))
+        sampling_rate = 1 / dt
         # TODO: not sure where to implement the distance check given potentially 4 bodyparts
         # dist_between_LEDs = get_distance(back_LED, front_LED)
         # is_too_separated = dist_between_LEDs >= max_LED_separation
