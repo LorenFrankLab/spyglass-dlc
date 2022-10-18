@@ -119,7 +119,6 @@ class DLCPos(dj.Computed):
             nwb_file_name=key["nwb_file_name"],
             analysis_file_name=key["analysis_file_name"],
         )
-
         self.insert1(key)
         from .dgramling_position import PosSource
 
@@ -187,17 +186,10 @@ class DLCPosVideo(dj.Computed):
         from tqdm import tqdm as tqdm
 
         M_TO_CM = 100
-        epoch = (
-            int(
-                key["interval_list_name"]
-                .replace("pos ", "")
-                .replace(" valid times", "")
-            )
-            + 1
-        )
+        interval_list_name = f"pos {key['epoch']-1} valid times"
         pose_estimation_key = {
             "nwb_file_name": key["nwb_file_name"],
-            "interval_list_name": key["interval_list_name"],
+            "interval_list_name": interval_list_name,
             "dlc_model_name": key["dlc_model_name"],
             "dlc_model_params_name": key["dlc_model_params_name"],
         }
@@ -215,7 +207,7 @@ class DLCPosVideo(dj.Computed):
             DLCPos()
             & {
                 "nwb_file_name": key["nwb_file_name"],
-                "interval_list_name": key["interval_list_name"],
+                "interval_list_name": interval_list_name,
                 "dlc_si_cohort_centroid": key["dlc_si_cohort_centroid"],
                 "dlc_centroid_params_name": key["dlc_centroid_params_name"],
                 "dlc_si_cohort_orientation": key["dlc_si_cohort_orientation"],
@@ -573,7 +565,7 @@ class DLCPosVideo(dj.Computed):
             movie = animation.FuncAnimation(
                 fig,
                 _update_plot,
-                frames=np.arange(0, n_frames + 3),
+                frames=np.arange(0, n_frames),
                 interval=1000 / fps,
                 blit=True,
             )
