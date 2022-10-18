@@ -61,9 +61,11 @@ class TrodesPosParams(dj.Manual):
 
     @classmethod
     def get_default(cls):
-        if len(cls & {"trodes_pos_params_name": "default"}) < 1:
-            cls.insert_default()
-        return (cls & {"trodes_pos_params_name": "default"}).fetch1("params")
+        default = (cls & {"trodes_pos_params_name": "default"}).fetch1()
+        if not len(default) > 0:
+            cls().insert_default(skip_duplicates=True)
+            default = (cls & {"trodes_pos_params_name": "default"}).fetch1()
+        return default
 
 
 @schema
