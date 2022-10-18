@@ -72,6 +72,8 @@ class DLCSmoothInterpParams(dj.Manual):
 
     @classmethod
     def get_default(cls):
+        if len(cls & {"dlc_si_params_name": "default"}) < 1:
+            cls.insert_default()
         return (cls & {"dlc_si_params_name": "default"}).fetch1("params")
 
     # def delete(self, key, **kwargs):

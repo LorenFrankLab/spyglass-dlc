@@ -59,6 +59,12 @@ class TrodesPosParams(dj.Manual):
             skip_duplicates=True,
         )
 
+    @classmethod
+    def get_default(cls):
+        if len(cls & {"trodes_pos_params_name": "default"}) < 1:
+            cls.insert_default()
+        return (cls & {"trodes_pos_params_name": "default"}).fetch1("params")
+
 
 @schema
 class TrodesPosSelection(dj.Manual):
@@ -508,7 +514,7 @@ class TrodesPosVideo(dj.Computed):
         frame_size = (int(video.get(3)), int(video.get(4)))
         frame_rate = video.get(5)
         n_frames = int(orientation_mean.shape[0])
-
+        print(f"video filepath: {output_video_filename}")
         out = cv2.VideoWriter(
             output_video_filename, fourcc, frame_rate, frame_size, True
         )

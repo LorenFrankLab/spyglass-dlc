@@ -50,6 +50,12 @@ class DLCCentroidParams(dj.Manual):
         }
         cls.insert1({"dlc_centroid_params_name": "default", "params": params})
 
+    @classmethod
+    def get_default(cls):
+        if len(cls & {"dlc_centroid_params_name": "default"}) < 1:
+            cls.insert_default()
+        return (cls & {"dlc_centroid_params_name": "default"}).fetch1("params")
+    
     def insert1(self, key, **kwargs):
         """
         Check provided parameter dictionary to make sure
