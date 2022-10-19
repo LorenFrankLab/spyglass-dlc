@@ -355,7 +355,7 @@ class DLCPosVideo(dj.Computed):
         Writer = animation.writers["ffmpeg"]
         fps = int(np.round(frame_rate / video_slowdown))
         writer = Writer(fps=fps, bitrate=-1)
-        n_frames = np.max(video_frame_inds)
+        n_frames = len(video_frame_inds)
         ret, frame = video.read()
         print(f"initial frame: {video.get(1)}")
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -538,8 +538,8 @@ class DLCPosVideo(dj.Computed):
                     neg_inds = np.where(likelihood_inds < 0)[0]
                     over_inds = np.where(
                         likelihood_inds
-                        > len(likelihoods[list(likelihood_objs.keys())[0]])
-                    )[0]
+                        > (len(likelihoods[list(likelihood_objs.keys())[0]]))[0] - 1
+                    )
                     if len(neg_inds) > 0:
                         likelihood_inds[neg_inds] = 0
                     if len(over_inds) > 0:
