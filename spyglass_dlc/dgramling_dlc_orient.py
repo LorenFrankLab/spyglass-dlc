@@ -42,7 +42,14 @@ class DLCOrientationParams(dj.Manual):
             skip_duplicates=True,
         )
 
-
+    @classmethod
+    def get_default(cls):
+        default = (cls & {"dlc_orientation_params_name": "default"}).fetch1()
+        if not len(default) > 0:
+            cls().insert_default(skip_duplicates=True)
+            default = (cls & {"dlc_orientation_params_name": "default"}).fetch1()
+        return default
+    
 @schema
 class DLCOrientationSelection(dj.Manual):
     """ """
