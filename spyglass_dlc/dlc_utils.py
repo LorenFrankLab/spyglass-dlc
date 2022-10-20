@@ -163,7 +163,7 @@ def get_video_path(key):
     video_info = (
         VideoFile() & {"nwb_file_name": key["nwb_file_name"], "epoch": key["epoch"]}
     ).fetch1()
-    nwb_path = os.getenv("SPYGLASS_BASE_DIR") + video_info["nwb_file_name"]
+    nwb_path = f"{os.getenv('SPYGLASS_BASE_DIR')}/raw/{video_info['nwb_file_name']}"
     with pynwb.NWBHDF5IO(path=nwb_path, mode="r") as io:
         nwb_file = io.read()
         nwb_video = nwb_file.objects[video_info["video_file_object_id"]]
