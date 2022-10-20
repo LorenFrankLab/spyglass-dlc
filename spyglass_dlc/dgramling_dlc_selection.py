@@ -119,18 +119,18 @@ class DLCPos(dj.Computed):
             nwb_file_name=key["nwb_file_name"],
             analysis_file_name=key["analysis_file_name"],
         )
-        
+
         self.insert1(key)
         from .dgramling_position import PosSource
 
         key["source"] = "DLC"
         dlc_key = key.copy()
-        key['interval_list_name'] = f"pos {key['epoch']-1} valid times"
+        key["interval_list_name"] = f"pos {key['epoch']-1} valid times"
         valid_fields = PosSource().fetch().dtype.fields.keys()
         entries_to_delete = [entry for entry in key.keys() if entry not in valid_fields]
         for entry in entries_to_delete:
             del key[entry]
-        
+
         PosSource().insert1(key=key, params=dlc_key, skip_duplicates=True)
 
     def fetch_nwb(self, *attrs, **kwargs):
@@ -189,7 +189,7 @@ class DLCPosVideo(dj.Computed):
         from tqdm import tqdm as tqdm
 
         M_TO_CM = 100
-        key['interval_list_name'] = f"pos {key['epoch']-1} valid times"
+        key["interval_list_name"] = f"pos {key['epoch']-1} valid times"
         epoch = (
             int(
                 key["interval_list_name"]
@@ -200,7 +200,7 @@ class DLCPosVideo(dj.Computed):
         )
         pose_estimation_key = {
             "nwb_file_name": key["nwb_file_name"],
-            "interval_list_name": interval_list_name,
+            "interval_list_name": key["interval_list_name"],
             "dlc_model_name": key["dlc_model_name"],
             "dlc_model_params_name": key["dlc_model_params_name"],
         }
@@ -218,7 +218,7 @@ class DLCPosVideo(dj.Computed):
             DLCPos()
             & {
                 "nwb_file_name": key["nwb_file_name"],
-                "interval_list_name": interval_list_name,
+                "interval_list_name": key["interval_list_name"],
                 "dlc_si_cohort_centroid": key["dlc_si_cohort_centroid"],
                 "dlc_centroid_params_name": key["dlc_centroid_params_name"],
                 "dlc_si_cohort_orientation": key["dlc_si_cohort_orientation"],
@@ -549,8 +549,8 @@ class DLCPosVideo(dj.Computed):
                     neg_inds = np.where(likelihood_inds < 0)[0]
                     over_inds = np.where(
                         likelihood_inds
-                        > (len(likelihoods[list(likelihood_objs.keys())[0]]))[0] - 1
-                    )
+                        > (len(likelihoods[list(likelihood_objs.keys())[0]])) - 1
+                    )[0]
                     if len(neg_inds) > 0:
                         likelihood_inds[neg_inds] = 0
                     if len(over_inds) > 0:
