@@ -64,7 +64,6 @@ class DLCSmoothInterpParams(dj.Manual):
             },
             "max_plausible_speed": 300.0,
             "speed_smoothing_std_dev": 0.100,
-            "sampling_rate": 50.0,
         }
         cls.insert1(
             {"dlc_si_params_name": "default", "params": default_params},
@@ -73,7 +72,11 @@ class DLCSmoothInterpParams(dj.Manual):
 
     @classmethod
     def get_default(cls):
-        return (cls & {"dlc_si_params_name": "default"}).fetch1("params")
+        default = (cls & {"dlc_si_params_name": "default"}).fetch1()
+        if not len(default) > 0:
+            cls().insert_default(skip_duplicates=True)
+            default = (cls & {"dlc_si_params_name": "default"}).fetch1()
+        return default
 
     # def delete(self, key, **kwargs):
     #     super().delete(key, **kwargs)
@@ -108,10 +111,11 @@ class DLCSmoothInterp(dj.Computed):
         params = (DLCSmoothInterpParams() & key).fetch1("params")
         max_plausible_speed = params.pop("max_plausible_speed", None)
         speed_smoothing_std_dev = params.pop("speed_smoothing_std_dev", None)
-        sampling_rate = params.pop("sampling_rate")
         # Get DLC output dataframe
         print("fetching Pose Estimation Dataframe")
         dlc_df = (DLCPoseEstimation.BodyPart() & key).fetch1_dataframe()
+        dt = np.median(np.diff(dlc_df.index.to_numpy()))
+        sampling_rate = 1 / dt
         # Calculate speed
         idx = pd.IndexSlice
         print("Calculating speed")

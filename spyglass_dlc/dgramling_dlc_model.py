@@ -124,7 +124,7 @@ class DLCModelParams(dj.Manual):
     @classmethod
     def get_default(cls):
         default = (cls & {"dlc_model_params_name": "default"}).fetch1()
-        if not len(default > 0):
+        if not len(default) > 0:
             cls().insert_default(skip_duplicates=True)
             default = (cls & {"dlc_model_params_name": "default"}).fetch1()
         return default
@@ -169,10 +169,10 @@ class DLCModel(dj.Computed):
 
         from deeplabcut.utils.auxiliaryfunctions import GetScorerName
 
-        model_name, _, table_source = (DLCModelSource & key).fetch1().values()
+        _, model_name, table_source = (DLCModelSource & key).fetch1().values()
         SourceTable = getattr(DLCModelSource, table_source)
         params = (DLCModelParams & key).fetch1("params")
-        project_path = SourceTable.fetch1("project_path")
+        project_path = (SourceTable & key).fetch1("project_path")
         if not isinstance(project_path, PosixPath):
             project_path = Path(project_path)
         config_query = PurePath(project_path, Path("*config.y*ml"))

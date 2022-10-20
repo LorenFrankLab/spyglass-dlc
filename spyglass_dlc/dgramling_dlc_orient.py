@@ -42,7 +42,14 @@ class DLCOrientationParams(dj.Manual):
             skip_duplicates=True,
         )
 
-
+    @classmethod
+    def get_default(cls):
+        default = (cls & {"dlc_orientation_params_name": "default"}).fetch1()
+        if not len(default) > 0:
+            cls().insert_default(skip_duplicates=True)
+            default = (cls & {"dlc_orientation_params_name": "default"}).fetch1()
+        return default
+    
 @schema
 class DLCOrientationSelection(dj.Manual):
     """ """
@@ -87,19 +94,21 @@ class DLCOrientation(dj.Computed):
         sampling_rate = 1 / dt
         orient_func = _key_to_func_dict[params["orient_method"]]
         orientation = orient_func(pos_df, **params)
-        # Smooth orientation
-        is_nan = np.isnan(orientation)
-        # Unwrap orientation before smoothing
-        orientation[~is_nan] = np.unwrap(orientation[~is_nan])
-        orientation[~is_nan] = gaussian_smooth(
-            orientation[~is_nan],
-            orientation_smoothing_std_dev,
-            sampling_rate,
-            axis=0,
-            truncate=8,
-        )
-        # convert back to between -pi and pi
-        orientation[~is_nan] = np.angle(np.exp(1j * orientation[~is_nan]))
+        if not params["orient_method"] == "none":
+
+            # Smooth orientation
+            is_nan = np.isnan(orientation)
+            # Unwrap orientation before smoothing
+            orientation[~is_nan] = np.unwrap(orientation[~is_nan])
+            orientation[~is_nan] = gaussian_smooth(
+                orientation[~is_nan],
+                orientation_smoothing_std_dev,
+                sampling_rate,
+                axis=0,
+                truncate=8,
+            )
+            # convert back to between -pi and pi
+            orientation[~is_nan] = np.angle(np.exp(1j * orientation[~is_nan]))
         final_df = pd.DataFrame(
             orientation, columns=["orientation"], index=pos_df.index
         )
@@ -161,6 +170,13 @@ def two_pt_head_orientation(pos_df: pd.DataFrame, **params):
     return orientation
 
 
+def no_orientation(pos_df: pd.DataFrame, **params):
+    fill_value = params.pop("fill_with", np.nan)
+    n_frames = len(pos_df)
+    orientation = np.full(shape=(n_frames), fill_value=fill_value, dtype=np.float16)
+    return orientation
+
+
 def red_led_bisector_orientation(pos_df: pd.DataFrame, **params):
     """Determines orientation based on 2 equally-spaced identifiers
     that are assumed to be perpendicular to the orientation direction.
@@ -192,6 +208,7 @@ def red_led_bisector_orientation(pos_df: pd.DataFrame, **params):
 # Add new functions for orientation calculation here
 
 _key_to_func_dict = {
+    "none": no_orientation,
     "red_green_orientation": two_pt_head_orientation,
     "red_led_bisector": red_led_bisector_orientation,
 }
