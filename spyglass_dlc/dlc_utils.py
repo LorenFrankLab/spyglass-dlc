@@ -163,15 +163,17 @@ def get_video_path(key):
     video_info = (
         VideoFile() & {"nwb_file_name": key["nwb_file_name"], "epoch": key["epoch"]}
     ).fetch1()
-    io = pynwb.NWBHDF5IO("/stelmo/nwb/raw/" + video_info["nwb_file_name"], "r")
-    nwb_file = io.read()
-    nwb_video = nwb_file.objects[video_info["video_file_object_id"]]
-    video_filepath = nwb_video.external_file[0]
-    video_dir = os.path.dirname(video_filepath) + "/"
-    video_filename = video_filepath.split(video_dir)[-1]
-    meters_per_pixel = nwb_video.device.meters_per_pixel
-    timestamps = np.asarray(nwb_video.timestamps)
-    io.close()
+    nwb_path = os.getenv("SPYGLASS_BASE_DIR") + video_info["nwb_file_name"]
+    with pynwb.NWBHDF5IO(path=nwb_path, mode="r") as io:
+        nwb_file = io.read()
+        nwb_video = nwb_file.objects[video_info["video_file_object_id"]]
+        video_filepath = VideoFile.get_abs_path(
+            {"nwb_file_name": key["nwb_file_name"], "epoch": key["epoch"]}
+        )
+        video_dir = os.path.dirname(video_filepath) + "/"
+        video_filename = video_filepath.split(video_dir)[-1]
+        meters_per_pixel = nwb_video.device.meters_per_pixel
+        timestamps = np.asarray(nwb_video.timestamps)
     return video_dir, video_filename, meters_per_pixel, timestamps
 
 
