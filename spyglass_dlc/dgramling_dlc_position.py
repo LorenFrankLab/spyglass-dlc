@@ -179,86 +179,45 @@ def interp_pos(dlc_df, **kwargs):
     )
     subthresh_spans = get_span_start_stop(subthresh_inds)
     for ind, (span_start, span_stop) in enumerate(subthresh_spans):
-        if not (span_stop + 1) == len(dlc_df):
-            x = [dlc_df["x"].iloc[span_start - 1], dlc_df["x"].iloc[span_stop + 1]]
-            y = [dlc_df["y"].iloc[span_start - 1], dlc_df["y"].iloc[span_stop + 1]]
-            span_len = int(span_stop - span_start + 1)
-            # TODO: determine if necessary to allow for these parameters
-            if "max_pts_to_interp" in kwargs:
-                if span_len > kwargs["max_pts_to_interp"]:
-                    if "max_cm_to_interp" in kwargs:
-                        if (
-                            np.linalg.norm(
-                                np.array([x[0], y[0]]) - np.array([x[1], y[1]])
-                            )
-                            < kwargs["max_cm_to_interp"]
-                        ):
-                            change = np.linalg.norm(
-                                np.array([x[0], y[0]]) - np.array([x[1], y[1]])
-                            )
-                            print(
-                                f"ind: {ind} length: "
-                                f"{span_len} interpolated because minimal change:\n {change}cm"
-                            )
-                        else:
-                            dlc_df.loc[idx[span_start:span_stop], idx["x"]] = np.nan
-                            dlc_df.loc[idx[span_start:span_stop], idx["y"]] = np.nan
-                            print(f"ind: {ind} length: {span_len} " f"not interpolated")
-                            continue
-            start_time = dlc_df.index[span_start]
-            stop_time = dlc_df.index[span_stop]
-            xnew = np.interp(
-                x=dlc_df.index[span_start : span_stop + 1],
-                xp=[start_time, stop_time],
-                fp=[x[0], x[-1]],
-            )
-            ynew = np.interp(
-                x=dlc_df.index[span_start : span_stop + 1],
-                xp=[start_time, stop_time],
-                fp=[y[0], y[-1]],
-            )
-            dlc_df.loc[idx[start_time:stop_time], idx["x"]] = xnew
-            dlc_df.loc[idx[start_time:stop_time], idx["y"]] = ynew
-        else:
-            x = [dlc_df["x"].iloc[span_start - 1], dlc_df["x"].iloc[span_stop]]
-            y = [dlc_df["y"].iloc[span_start - 1], dlc_df["y"].iloc[span_stop]]
-            span_len = int(span_stop - span_start)
-            # TODO: determine if necessary to allow for these parameters
-            if "max_pts_to_interp" in kwargs:
-                if span_len > kwargs["max_pts_to_interp"]:
-                    if "max_cm_to_interp" in kwargs:
-                        if (
-                            np.linalg.norm(
-                                np.array([x[0], y[0]]) - np.array([x[1], y[1]])
-                            )
-                            < kwargs["max_cm_to_interp"]
-                        ):
-                            change = np.linalg.norm(
-                                np.array([x[0], y[0]]) - np.array([x[1], y[1]])
-                            )
-                            print(
-                                f"ind: {ind} length: "
-                                f"{span_len} interpolated because minimal change:\n {change}cm"
-                            )
-                        else:
-                            dlc_df.loc[idx[span_start:-1], idx["x"]] = np.nan
-                            dlc_df.loc[idx[span_start:-1], idx["y"]] = np.nan
-                            print(f"ind: {ind} length: {span_len} " f"not interpolated")
-                            continue
-            start_time = dlc_df.index[span_start]
-            stop_time = dlc_df.index[-1]
-            xnew = np.interp(
-                x=dlc_df.index[span_start:-1],
-                xp=[start_time, stop_time],
-                fp=[x[0], x[-1]],
-            )
-            ynew = np.interp(
-                x=dlc_df.index[span_start:-1],
-                xp=[start_time, stop_time],
-                fp=[y[0], y[-1]],
-            )
-            dlc_df.loc[idx[start_time:stop_time], idx["x"]] = xnew
-            dlc_df.loc[idx[start_time:stop_time], idx["y"]] = ynew
+        if (span_stop + 1) == len(dlc_df):
+            span_stop = span_stop - 1
+        x = [dlc_df["x"].iloc[span_start - 1], dlc_df["x"].iloc[span_stop + 1]]
+        y = [dlc_df["y"].iloc[span_start - 1], dlc_df["y"].iloc[span_stop + 1]]
+        span_len = int(span_stop - span_start + 1)
+        # TODO: determine if necessary to allow for these parameters
+        if "max_pts_to_interp" in kwargs:
+            if span_len > kwargs["max_pts_to_interp"]:
+                if "max_cm_to_interp" in kwargs:
+                    if (
+                        np.linalg.norm(np.array([x[0], y[0]]) - np.array([x[1], y[1]]))
+                        < kwargs["max_cm_to_interp"]
+                    ):
+                        change = np.linalg.norm(
+                            np.array([x[0], y[0]]) - np.array([x[1], y[1]])
+                        )
+                        print(
+                            f"ind: {ind} length: "
+                            f"{span_len} interpolated because minimal change:\n {change}cm"
+                        )
+                    else:
+                        dlc_df.loc[idx[span_start:span_stop], idx["x"]] = np.nan
+                        dlc_df.loc[idx[span_start:span_stop], idx["y"]] = np.nan
+                        print(f"ind: {ind} length: {span_len} " f"not interpolated")
+                        continue
+        start_time = dlc_df.index[span_start]
+        stop_time = dlc_df.index[span_stop]
+        xnew = np.interp(
+            x=dlc_df.index[span_start : span_stop + 1],
+            xp=[start_time, stop_time],
+            fp=[x[0], x[-1]],
+        )
+        ynew = np.interp(
+            x=dlc_df.index[span_start : span_stop + 1],
+            xp=[start_time, stop_time],
+            fp=[y[0], y[-1]],
+        )
+        dlc_df.loc[idx[start_time:stop_time], idx["x"]] = xnew
+        dlc_df.loc[idx[start_time:stop_time], idx["y"]] = ynew
     return dlc_df
 
 
