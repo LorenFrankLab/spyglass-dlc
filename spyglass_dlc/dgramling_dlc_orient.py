@@ -49,7 +49,12 @@ class DLCOrientationParams(dj.Manual):
             cls().insert_default(skip_duplicates=True)
             default = (cls & {"dlc_orientation_params_name": "default"}).fetch1()
         return default
-    
+
+    @classmethod
+    def get_orient_methods(cls):
+        return _key_to_func_dict
+
+
 @schema
 class DLCOrientationSelection(dj.Manual):
     """ """
@@ -159,7 +164,7 @@ class DLCOrientation(dj.Computed):
         )
 
 
-def two_pt_head_orientation(pos_df: pd.DataFrame, **params):
+def two_pt_orientation(pos_df: pd.DataFrame, **params):
     """Determines orientation based on vector between two points"""
     BP1 = params.pop("bodypart1", None)
     BP2 = params.pop("bodypart2", None)
@@ -209,6 +214,6 @@ def red_led_bisector_orientation(pos_df: pd.DataFrame, **params):
 
 _key_to_func_dict = {
     "none": no_orientation,
-    "red_green_orientation": two_pt_head_orientation,
+    "two_pt_orientation": two_pt_orientation,
     "red_led_bisector": red_led_bisector_orientation,
 }

@@ -179,6 +179,11 @@ def interp_pos(dlc_df, **kwargs):
     )
     subthresh_spans = get_span_start_stop(subthresh_inds)
     for ind, (span_start, span_stop) in enumerate(subthresh_spans):
+        if (span_stop + 1) >= len(dlc_df):
+            dlc_df.loc[idx[span_start:span_stop], idx["x"]] = np.nan
+            dlc_df.loc[idx[span_start:span_stop], idx["y"]] = np.nan
+            print(f"ind: {ind} has no endpoint with which to interpolate")
+            continue
         x = [dlc_df["x"].iloc[span_start - 1], dlc_df["x"].iloc[span_stop + 1]]
         y = [dlc_df["y"].iloc[span_start - 1], dlc_df["y"].iloc[span_stop + 1]]
         span_len = int(span_stop - span_start + 1)
